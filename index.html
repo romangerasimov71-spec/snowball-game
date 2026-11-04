@@ -65,8 +65,10 @@
   .sizebar i { display: block; height: 100%; width: 30%; background: linear-gradient(90deg, #9fd8ff, #fff); border-radius: 6px; }
   #pauseBtn {
     pointer-events: auto; width: 46px; height: 46px; border-radius: 14px; border: 0;
-    background: rgba(13,35,64,.55); color: #fff; font-size: 22px; cursor: pointer; margin-left: 8px;
+    background: rgba(13,35,64,.55); cursor: pointer; margin-left: 8px; padding: 0;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
   }
+  #pauseBtn i { display: block; width: 6px; height: 18px; border-radius: 2px; background: #fff; }
   .hudRight { display: flex; align-items: flex-start; }
 
   #shop .tabs { display: flex; gap: 8px; }
@@ -116,7 +118,7 @@
   </div>
   <div class="pill" id="hudScore">0</div>
   <div class="hudRight">
-    <button id="pauseBtn" aria-label="pause">❚❚</button>
+    <button id="pauseBtn" aria-label="pause"><i></i><i></i></button>
   </div>
 </div>
 

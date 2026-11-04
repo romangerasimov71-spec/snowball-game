@@ -151,11 +151,11 @@ function spawnRow() {
   if (roll < 0.30) {
     const n = 1 + (Math.random() * 3 | 0);
     for (let i = 0; i < n; i++) add('snow', rand(margin, W - margin), y + rand(0, 80), rand(14, 22));
-  } else if (roll < 0.42) {
+  } else if (roll < 0.52) {
     const x = rand(margin + 20, W - margin - 20);
     const curve = rand(-1, 1) * 60;
-    for (let i = 0; i < 6; i++) add('coin', x + Math.sin(i / 5 * Math.PI) * curve, y + i * 46, 13);
-  } else if (roll < 0.86) {
+    for (let i = 0; i < 6; i++) add('coin', x + Math.sin(i / 5 * Math.PI) * curve, y + i * 50, 17);
+  } else if (roll < 0.88) {
     const n = 1 + (Math.random() < 0.35 + d * 0.4 ? 1 : 0) + (Math.random() < d * 0.3 ? 1 : 0);
     for (let i = 0; i < n; i++) {
       const s = obstacleSize();
@@ -164,7 +164,8 @@ function spawnRow() {
       add(type, rand(margin, W - margin), y + rand(0, 100), type === 'rock' ? s * 0.85 : s);
     }
     if (Math.random() < 0.5) add('snow', rand(margin, W - margin), y + rand(120, 180), rand(14, 20));
-  } else if (roll < 0.94) {
+    if (Math.random() < 0.4) add('coin', rand(margin, W - margin), y + rand(-40, 160), 17);
+  } else if (roll < 0.95) {
     if (S.t > 20) add('fire', rand(margin, W - margin), y, rand(26, 34));
     else add('snow', rand(margin, W - margin), y, 18);
   } else {
@@ -370,6 +371,7 @@ function update(dt) {
         const v = 1 + save.up.coin;
         S.coins += v;
         Sfx.coin();
+        floatText(o.x, o.y - 10, '+' + v, '#ffd34d', 22);
         burst(o.x, o.y, 6, '#ffd34d', 150, [2, 4]);
         break;
       }
@@ -581,6 +583,8 @@ function drawCoin(o) {
   const w = Math.abs(Math.cos(tm * 4 + o.seed * 6));
   const s = o.size;
   shadow(o.x, o.y + s + 4, s * 0.8, s * 0.25);
+  ctx.fillStyle = 'rgba(255,211,77,0.25)';
+  ctx.beginPath(); ctx.arc(o.x, o.y, s * 1.6, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#c98a12';
   ctx.beginPath(); ctx.ellipse(o.x, o.y, s * Math.max(0.15, w), s, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#ffd34d';
