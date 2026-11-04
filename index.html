@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Снежный Ком</title>
+<script src="js/vk-bridge.min.js"></script>
+<script>
+  // VK Игры передают в адрес параметры запуска vk_*. Инициализируем мост сразу при старте.
+  window.IS_VK = /[?&#]vk_(app_id|platform|user_id|language)=/.test(location.search + location.hash);
+  if (window.IS_VK && window.vkBridge) vkBridge.send('VKWebAppInit').catch(function () {});
+</script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #0d2340;
+    font-family: 'Trebuchet MS', 'Segoe UI', Roboto, Arial, sans-serif;
+    user-select: none; -webkit-user-select: none; touch-action: none;
+    overscroll-behavior: none; color: #fff;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .screen {
+    position: fixed; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: safe center; gap: 14px; padding: 20px;
+    padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom));
+    background: radial-gradient(ellipse at center, rgba(13,35,64,.55), rgba(13,35,64,.85));
+    text-align: center; z-index: 5; overflow-y: auto; touch-action: pan-y;
+  }
+  /* Кнопка «Играть» с номером уровня второй строкой */
+  #playBtn small { display: block; font-size: 16px; font-weight: bold; opacity: .85; margin-top: 2px; }
+  /* Низкие экраны (телефон в VK с баннером): компактнее */
+  @media (max-height: 640px) {
+    .screen { gap: 9px; }
+    h1 { font-size: clamp(34px, 10vw, 52px); }
+    .sub { margin-bottom: 0; font-size: 16px; }
+    .btn { padding: 11px 22px; font-size: 19px; }
+    .btn.big { padding: 13px 30px; font-size: 26px; }
+    #winStars { font-size: 48px; }
+    .toggles { bottom: 10px; }
+  }
+  .screen.show { display: flex; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+  h1 {
+    margin: 0; font-size: clamp(40px, 11vw, 76px); line-height: 1; letter-spacing: 1px;
+    color: #fff; text-shadow: 0 4px 0 #6fa8dc, 0 8px 18px rgba(0,0,0,.4);
+  }
+  h2 { margin: 0; font-size: clamp(28px, 8vw, 44px); text-shadow: 0 3px 0 #6fa8dc; }
+  .sub { font-size: 18px; color: #cfe6ff; margin-bottom: 8px; }
+  .stat { font-size: 20px; color: #e6f2ff; }
+  .stat b { color: #ffd34d; }
+
+  .btn {
+    min-width: 230px; padding: 14px 26px; border: 0; border-radius: 18px;
+    font: inherit; font-size: 22px; font-weight: bold; color: #fff; cursor: pointer;
+    background: linear-gradient(#4fb3ff, #2a7fd4); box-shadow: 0 6px 0 #1b5a9a, 0 10px 20px rgba(0,0,0,.3);
+    transition: transform .08s;
+  }
+  .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #1b5a9a; }
+  .btn.green { background: linear-gradient(#5fe07a, #2fb24d); box-shadow: 0 6px 0 #1f7d35, 0 10px 20px rgba(0,0,0,.3); }
+  .btn.gold { background: linear-gradient(#ffd34d, #f0a01e); color: #5a3300; box-shadow: 0 6px 0 #a86a08, 0 10px 20px rgba(0,0,0,.3); }
+  .btn.ghost { background: rgba(255,255,255,.12); box-shadow: none; font-size: 18px; min-width: 0; }
+  .btn.big { font-size: 30px; padding: 18px 40px; min-width: 260px; }
+  .btn:disabled { filter: grayscale(.8) brightness(.8); cursor: default; }
+  .ad::before { content: '▶ '; font-size: .8em; }
+
+  .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; display: none; justify-content: space-between;
+    align-items: flex-start; padding: 12px 14px; pointer-events: none; z-index: 3;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  #hud.show { display: flex; }
+  .hudLeft { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .pill.small { font-size: 16px; padding: 4px 10px; color: #e6f2ff; }
+  .hudMid { flex: 1; display: flex; justify-content: center; padding: 0 8px; }
+  #hud:not(.endless) #hudScore { display: none; }
+  #hud.endless .levelBox { display: none; }
+  .levelBox { width: min(220px, 100%); background: rgba(13,35,64,.55); border-radius: 14px; padding: 6px 10px 8px; }
+  .levelTop { display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; margin-bottom: 5px; }
+  #hudStars i, #winStars i { font-style: normal; color: rgba(255,255,255,.25); transition: color .2s, transform .3s; display: inline-block; }
+  #hudStars i.on { color: #ffd34d; }
+  .prog { position: relative; height: 10px; border-radius: 6px; background: rgba(255,255,255,.2); }
+  .prog i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #9fd8ff, #fff); }
+  .prog b { position: absolute; right: -6px; top: -8px; font-size: 16px; }
+  #winStars { font-size: 64px; letter-spacing: 6px; line-height: 1; }
+  #winStars i.on { color: #ffd34d; transform: scale(1.2); text-shadow: 0 0 18px rgba(255,211,77,.6); }
+  .pill {
+    background: rgba(13,35,64,.55); border-radius: 14px; padding: 6px 12px;
+    font-size: 20px; font-weight: bold; backdrop-filter: blur(4px);
+  }
+  #hudScore { font-size: 30px; text-align: center; background: none; text-shadow: 0 2px 4px rgba(0,0,0,.5); }
+  #hudCoins { color: #ffd34d; }
+  #pauseBtn {
+    pointer-events: auto; width: 46px; height: 46px; border-radius: 14px; border: 0;
+    background: rgba(13,35,64,.55); cursor: pointer; margin-left: 8px; padding: 0;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  #pauseBtn i { display: block; width: 6px; height: 18px; border-radius: 2px; background: #fff; }
+  .hudRight { display: flex; align-items: flex-start; }
+
+  #shop .tabs { display: flex; gap: 8px; }
+  #shop .tabs .btn { min-width: 130px; font-size: 18px; padding: 10px 14px; }
+  #shop .tabs .btn.off { background: rgba(255,255,255,.12); box-shadow: none; }
+  #shopList {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;
+    width: min(680px, 100%); max-height: 56vh; overflow-y: auto; padding: 6px; touch-action: pan-y;
+  }
+  .card {
+    background: rgba(255,255,255,.1); border-radius: 16px; padding: 12px 10px; display: flex;
+    flex-direction: column; align-items: center; gap: 6px; border: 2px solid transparent;
+  }
+  .card.sel { border-color: #ffd34d; }
+  .card canvas { width: 64px; height: 64px; }
+  .card .nm { font-weight: bold; font-size: 17px; }
+  .card .ds { font-size: 13px; color: #cfe6ff; min-height: 32px; }
+  .card .btn { min-width: 0; width: 100%; font-size: 16px; padding: 8px; border-radius: 12px; }
+  .lvl { display: flex; gap: 4px; }
+  .lvl i { width: 14px; height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); }
+  .lvl i.on { background: #ffd34d; }
+
+  .toggles { display: flex; gap: 10px; position: fixed; bottom: 16px; right: 16px; z-index: 6; }
+  .toggles button {
+    width: 48px; height: 48px; border-radius: 14px; border: 0; font-size: 22px; cursor: pointer;
+    background: rgba(255,255,255,.15); color: #fff;
+  }
+  .toggles button.off { opacity: .4; }
+  .btn.toggle { min-width: 140px; padding: 12px 18px; }
+  .btn.half { min-width: 110px; flex: 1; }
+  #menu .row { width: min(260px, 100%); }
+  .btn.small { font-size: 13px !important; }
+  #levelList { width: min(520px, 100%); max-height: 64vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px; touch-action: pan-y; }
+  .zoneBox { border-radius: 18px; padding: 10px 12px 12px; background: var(--zsky); color: #1d2a44; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .zoneBox.night { color: #e6f2ff; }
+  .zoneHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 18px; }
+  .zoneHead span { font-weight: bold; color: #c98a12; }
+  .zoneBox.night .zoneHead span { color: #ffd34d; }
+  .lvRow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .lv { aspect-ratio: 1; border: 0; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        background: linear-gradient(#4fb3ff, #2a7fd4); color: #fff; box-shadow: 0 4px 0 #1b5a9a; font: inherit; padding: 0; }
+  .lv .num { font-size: 22px; font-weight: bold; line-height: 1; }
+  .lv .st { font-size: 11px; color: #ffd34d; letter-spacing: -1px; min-height: 12px; }
+  .lv.bossLv { background: linear-gradient(#b07fff, #6b3fd4); box-shadow: 0 4px 0 #4a2a9a; }
+  .lv.cur { outline: 3px solid #ffd34d; outline-offset: 2px; }
+  .lv.locked { background: rgba(30,40,70,.35); box-shadow: none; cursor: default; }
+  .lv.locked .num { font-size: 18px; }
+  .lv:active:not(.locked) { transform: translateY(3px); box-shadow: 0 1px 0 #1b5a9a; }
+  .newSkin { display: flex; align-items: center; gap: 12px; background: rgba(255,211,77,.15); border: 2px solid #ffd34d; border-radius: 16px; padding: 8px 16px 8px 8px; text-align: left; }
+  .newSkin[hidden], .btn[hidden], .stat[hidden] { display: none; }
+  .stat.hint { font-size: 16px; color: #cfe6ff; }
+  .newSkin canvas { width: 56px; height: 56px; }
+  .btn.toggle.off { opacity: .45; text-decoration: line-through; }
+  .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
+
+  #toast.low { top: auto; bottom: calc(90px + env(safe-area-inset-bottom)); }
+  #toast { white-space: pre-line;
+    position: fixed; left: 50%; top: 10%; transform: translateX(-50%); z-index: 10;
+    background: rgba(13,35,64,.85); padding: 12px 20px; border-radius: 14px; font-size: 20px;
+    font-weight: bold; display: none; text-align: center; max-width: 90%;
+  }
+  #reviveTimer { font-size: 54px; font-weight: bold; color: #ffd34d; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; background: #0d2340; z-index: 20; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="hudLeft">
+    <div class="pill" id="hudCoins">● 0</div>
+    <div class="pill small" id="hudSize">0.4 м</div>
+  </div>
+  <div class="hudMid">
+    <div id="hudScore">0</div>
+    <div class="levelBox">
+      <div class="levelTop"><span id="hudLevel"></span><span id="hudStars"><i>★</i><i>★</i><i>★</i></span></div>
+      <div class="prog"><i id="hudProg"></i><b>🏁</b></div>
+    </div>
+  </div>
+  <div class="hudRight">
+    <button id="pauseBtn" aria-label="pause"><i></i><i></i></button>
+  </div>
+</div>
+
+<div class="screen" id="menu">
+  <div class="pill topcoins" id="menuCoins">● 0</div>
+  <h1 data-t="title"></h1>
+  <div class="sub" data-t="subtitle"></div>
+  <div class="stat"><b id="menuStars">0</b> ★ &nbsp;·&nbsp; <span data-t="best"></span>: <b id="menuBest">0</b></div>
+  <button class="btn green big" id="playBtn" data-t="play"></button>
+  <div class="row">
+    <button class="btn half" id="levelsBtn" data-t="levels"></button>
+    <button class="btn half" id="shopBtn" data-t="shop"></button>
+  </div>
+  <button class="btn" id="endlessBtn" data-t="endless"></button>
+  <div class="toggles">
+    <button id="sndBtn" aria-label="sound">🔊</button>
+    <button id="musBtn" aria-label="music">🎵</button>
+  </div>
+</div>
+
+<div class="screen" id="shop">
+  <div class="pill topcoins" id="shopCoins">● 0</div>
+  <h2 data-t="shop"></h2>
+  <div class="tabs">
+    <button class="btn" id="tabSkins" data-t="skins"></button>
+    <button class="btn off" id="tabUps" data-t="upgrades"></button>
+  </div>
+  <div id="shopList"></div>
+  <div class="row">
+    <button class="btn gold ad" id="freeCoinsBtn"></button>
+    <button class="btn ghost" id="shopBack" data-t="back"></button>
+  </div>
+</div>
+
+<div class="screen" id="levels">
+  <div class="pill topcoins" id="levelsStars"></div>
+  <h2 data-t="levels"></h2>
+  <div id="levelList"></div>
+  <button class="btn ghost" id="levelsBack" data-t="back"></button>
+</div>
+
+<div class="screen" id="pause">
+  <h2 data-t="paused"></h2>
+  <button class="btn green big" id="resumeBtn" data-t="resume"></button>
+  <button class="btn" id="pauseMenuBtn" data-t="menu"></button>
+  <div class="row">
+    <button class="btn ghost toggle" id="pSndBtn"><span class="ic">🔊</span> <span data-t="sound"></span></button>
+    <button class="btn ghost toggle" id="pMusBtn"><span class="ic">🎵</span> <span data-t="music"></span></button>
+  </div>
+</div>
+
+<div class="screen" id="revive">
+  <h2 id="reviveTitle"></h2>
+  <div id="reviveTimer">5</div>
+  <button class="btn gold big ad" id="reviveBtn" data-t="revive"></button>
+  <button class="btn ghost" id="reviveSkip" data-t="noThanks"></button>
+</div>
+
+<div class="screen" id="over">
+  <h2 id="overTitle"></h2>
+  <div class="stat" id="overScoreRow"><span data-t="score"></span>: <b id="overScore">0</b></div>
+  <div class="stat" id="overBestRow"><span data-t="best"></span>: <b id="overBest">0</b></div>
+  <div class="stat" id="overSizeRow"><span data-t="sizeLbl"></span>: <b id="overSize">0</b></div>
+  <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> <b>●</b></div>
+  <button class="btn gold ad" id="doubleBtn" data-t="doubleCoins"></button>
+  <button class="btn green big" id="againBtn" data-t="again"></button>
+  <button class="btn ghost" id="overMenuBtn" data-t="menu"></button>
+</div>
+
+<div class="screen" id="win">
+  <h2 id="winTitle"></h2>
+  <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
+  <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
+  <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
+  <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
+  <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
+  <div class="stat hint" id="winHint" hidden></div>
+  <button class="btn green big" id="winNext"></button>
+  <button class="btn" id="winRetry" hidden></button>
+  <button class="btn ghost" id="winMenu" data-t="menu"></button>
+</div>
+
+<div id="toast"></div>
+<div id="loading">❄</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sdk.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
