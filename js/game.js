@@ -193,11 +193,15 @@ function obstacleSize() {
 }
 
 // Мир «взрослеет» вместе с комом: ёлки → машины → дома → башни.
+// Люди всегда «настоящего» размера (50 единиц = 1 м): лыжник ~1.7 м ростом,
+// снегоход ~3 м длиной. Маленький ком в них врезается, большой — сбивает.
+const PEOPLE = { skier: 53, sled: 70 };
+
 function typeFor(s) {
-  if (s < 30) return pick(['tree', 'tree', 'rock', 'snowman', 'skier']);
-  if (s < 70) return pick(['tree', 'snowman', 'rock', 'sled', 'skier']);
-  if (s < 160) return pick(['sled', 'house', 'tree', 'house', 'snowman']);
-  if (s < 400) return pick(['house', 'house', 'tower', 'tree', 'sled']);
+  if (s < 30) return pick(['tree', 'tree', 'rock', 'snowman']);
+  if (s < 70) return pick(['tree', 'snowman', 'rock', 'tree']);
+  if (s < 160) return pick(['house', 'tree', 'house', 'snowman']);
+  if (s < 400) return pick(['house', 'house', 'tower', 'tree']);
   return pick(['tower', 'house', 'tree', 'tower']);
 }
 
@@ -218,6 +222,11 @@ function spawnRow() {
   } else if (roll < 0.88) {
     const n = 1 + (Math.random() < 0.35 + h * 0.4 ? 1 : 0) + (Math.random() < h * 0.3 ? 1 : 0);
     for (let i = 0; i < n; i++) {
+      // Иногда вместо обычного препятствия — человек (пока ком не стал гигантским)
+      if (Math.random() < 0.22) {
+        const type = Math.random() < 0.55 ? 'skier' : 'sled';
+        if (ball.r < PEOPLE[type] * 8) { add(type, rx(), y + rand(0, 100) / z, PEOPLE[type]); continue; }
+      }
       const s = obstacleSize();
       const type = typeFor(s);
       add(type, rx(), y + rand(0, 100) / z, type === 'rock' ? s * 0.85 : s);
@@ -1160,7 +1169,7 @@ function menuUpdate(dt) {
   if (S.nextSpawn <= 0) {
     const r = Math.random();
     const type = r < 0.4 ? 'tree' : r < 0.55 ? 'rock' : r < 0.7 ? 'snowman' : r < 0.8 ? 'house' : r < 0.9 ? 'skier' : 'sled';
-    add(type, rand(-W / 2 + 30, W / 2 - 30), H - BALL_SY + 100, rand(25, 55));
+    add(type, rand(-W / 2 + 30, W / 2 - 30), H - BALL_SY + 100, PEOPLE[type] || rand(25, 55));
     S.nextSpawn = rand(80, 160);
   }
   updateParts(dt, 0);
