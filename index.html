@@ -109,6 +109,8 @@
     background: rgba(255,255,255,.15); color: #fff;
   }
   .toggles button.off { opacity: .4; }
+  .btn.toggle { min-width: 140px; padding: 12px 18px; }
+  .btn.toggle.off { opacity: .45; text-decoration: line-through; }
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
 
   #toast { white-space: pre-line;
@@ -172,6 +174,10 @@
   <h2 data-t="paused"></h2>
   <button class="btn green big" id="resumeBtn" data-t="resume"></button>
   <button class="btn" id="pauseMenuBtn" data-t="menu"></button>
+  <div class="row">
+    <button class="btn ghost toggle" id="pSndBtn"><span class="ic">🔊</span> <span data-t="sound"></span></button>
+    <button class="btn ghost toggle" id="pMusBtn"><span class="ic">🎵</span> <span data-t="music"></span></button>
+  </div>
 </div>
 
 <div class="screen" id="revive">

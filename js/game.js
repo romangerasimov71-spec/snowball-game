@@ -1109,8 +1109,16 @@ function refreshMenu() {
   $('playBtn').textContent = t('play') + ' · ' + t('levelN', { n: save.level });
   const total = Object.values(save.stars).reduce((a, b) => a + b, 0);
   $('menuStars').textContent = total;
-  $('sndBtn').classList.toggle('off', !save.sound);
-  $('musBtn').classList.toggle('off', !save.music);
+  refreshToggles();
+}
+
+function refreshToggles() {
+  for (const [id, on, icOn, icOff] of [['sndBtn', save.sound, '🔊', '🔇'], ['pSndBtn', save.sound, '🔊', '🔇'], ['musBtn', save.music, '🎵', '🎵'], ['pMusBtn', save.music, '🎵', '🎵']]) {
+    const el = $(id);
+    el.classList.toggle('off', !on);
+    const ic = el.querySelector('.ic');
+    if (ic) ic.textContent = on ? icOn : icOff; else el.textContent = on ? icOn : icOff;
+  }
 }
 
 function applyTexts() {
@@ -1225,8 +1233,11 @@ function setupUI() {
     if (ok) { save.coins += 50; persist(); Sfx.buy(); refreshMenu(); renderShop(); }
     else toast(t('adFail'));
   });
-  bind('sndBtn', () => { save.sound = !save.sound; Sfx.soundOn = save.sound; Sfx.applyVolume(); persist(); refreshMenu(); Sfx.click(); });
-  bind('musBtn', () => { save.music = !save.music; Sfx.musicOn = save.music; Sfx.applyVolume(); persist(); refreshMenu(); });
+  // Звук и музыка: кнопки в меню и на паузе управляют одной настройкой
+  const toggleSound = () => { save.sound = !save.sound; Sfx.soundOn = save.sound; Sfx.applyVolume(); persist(); refreshToggles(); Sfx.click(); };
+  const toggleMusic = () => { save.music = !save.music; Sfx.musicOn = save.music; Sfx.applyVolume(); persist(); refreshToggles(); };
+  bind('sndBtn', toggleSound); bind('pSndBtn', toggleSound);
+  bind('musBtn', toggleMusic); bind('pMusBtn', toggleMusic);
 }
 
 function checkDaily() {
