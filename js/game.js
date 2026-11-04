@@ -152,7 +152,7 @@ function burst(wx, wy, n, color, spd = 260, size = [3, 7], k = 1) {
 }
 
 // ---------- Спавн ----------
-const CR = { tree: 0.5, rock: 0.75, snowman: 0.6, car: 0.8, house: 0.85, tower: 0.6, fire: 0.7, snow: 0.8, coin: 1, magnet: 1, shield: 1 };
+const CR = { tree: 0.5, rock: 0.75, snowman: 0.6, sled: 0.8, skier: 0.45, house: 0.85, tower: 0.6, fire: 0.7, snow: 0.8, coin: 1, magnet: 1, shield: 1 };
 
 function freeSpot(x, y, r) {
   const gap = 30 / S.z;
@@ -169,7 +169,14 @@ function add(type, x, y, size, extra = {}) {
   if (!freeSpot(x, y, cr)) return null;
   const o = { type, x, y, size, r: cr, dead: false, seed: Math.random(), ...extra };
   if (type === 'house') o.color = pick(['#b5523b', '#c9a227', '#6b8fb5', '#8a5a3c', '#5f9e6e']);
-  if (type === 'car') o.color = pick(['#e8324a', '#2a7fd4', '#f0a01e', '#3fbf8a', '#7d4bd4']);
+  if (type === 'sled' || type === 'skier') {
+    // Снегоходы и лыжники едут поперёк склона; скорость пропорциональна размеру
+    o.color = pick(['#e8324a', '#2a7fd4', '#f0a01e', '#3fbf8a', '#7d4bd4']);
+    o.jacket = pick(['#2a3a5a', '#e8324a', '#f0a01e', '#3fbf8a', '#ffffff']);
+    o.dir = Math.random() < 0.5 ? -1 : 1;
+    o.vx = o.dir * size * (type === 'skier' ? rand(1.8, 2.6) : rand(1.2, 2.0));
+    o.wheel = 0;
+  }
   objs.push(o);
   return o;
 }
@@ -187,10 +194,10 @@ function obstacleSize() {
 
 // Мир «взрослеет» вместе с комом: ёлки → машины → дома → башни.
 function typeFor(s) {
-  if (s < 30) return pick(['tree', 'tree', 'rock', 'snowman']);
-  if (s < 70) return pick(['tree', 'snowman', 'rock', 'car']);
-  if (s < 160) return pick(['car', 'house', 'tree', 'house', 'snowman']);
-  if (s < 400) return pick(['house', 'house', 'tower', 'tree', 'car']);
+  if (s < 30) return pick(['tree', 'tree', 'rock', 'snowman', 'skier']);
+  if (s < 70) return pick(['tree', 'snowman', 'rock', 'sled', 'skier']);
+  if (s < 160) return pick(['sled', 'house', 'tree', 'house', 'snowman']);
+  if (s < 400) return pick(['house', 'house', 'tower', 'tree', 'sled']);
   return pick(['tower', 'house', 'tree', 'tower']);
 }
 
@@ -374,7 +381,7 @@ function smash(o, bonus = 1) {
   const k = clamp(o.size * S.z / 30, 0.7, 3);
   Sfx.smash(k > 1.3);
   S.shake = Math.max(S.shake, 4 + k * 3);
-  const col = { tree: '#2f7d4f', rock: '#7d8796', car: o.color, house: o.color, tower: '#8a8f9c', snowman: '#fff' }[o.type] || '#fff';
+  const col = { tree: '#2f7d4f', rock: '#7d8796', sled: o.color, skier: o.jacket, house: o.color, tower: '#8a8f9c', snowman: '#fff' }[o.type] || '#fff';
   burst(o.x, o.y, 14, col, 300, [3, 7], k);
   burst(o.x, o.y, 12, '#fff', 260, [3, 7], k);
   if (o.type === 'house') burst(o.x, o.y, 8, '#6b4325', 280, [3, 6], k);
@@ -462,6 +469,7 @@ function update(dt) {
   const magR = (200 + ball.r * 2 * S.z) / S.z;
   for (const o of objs) {
     o.y -= wdy;
+    if (o.vx) moveMover(o, dt);
     if (o.dead) continue;
     if (o.type === 'finish' || o.type === 'castle') {
       if (o.y <= ball.r * 0.5) {
@@ -560,6 +568,18 @@ function updateHud() {
       [...$('hudStars').children].forEach((el, i) => el.classList.toggle('on', i < st));
       hudCache.st = st;
     }
+  }
+}
+
+function moveMover(o, dt) {
+  o.x += o.vx * dt;
+  o.wheel += Math.abs(o.vx) * dt / (o.size * 0.2);
+  const lim = halfW() - o.size;
+  if ((o.x > lim && o.vx > 0) || (o.x < -lim && o.vx < 0)) { o.vx = -o.vx; o.dir = -o.dir; }
+  // Снежная пыль из-под гусеницы / лыж
+  if (Math.random() < dt * (o.type === 'sled' ? 10 : 5)) {
+    const [sx, sy] = w2s(o.x - o.dir * o.size * 0.9, o.y + o.size * 0.1);
+    parts.push({ x: sx, y: sy, vx: -o.dir * rand(20, 60), vy: rand(-50, -20), r: rand(3, 6) * Math.max(0.6, o.size * S.z / 40), color: 'rgba(255,255,255,0.85)', life: 0.6, g: 60 });
   }
 }
 
@@ -817,34 +837,92 @@ function drawBallAt(c, x, y, r, rot, skinId, tilt = 0) {
 }
 
 
-function drawCar(o) {
+// Снегоход с водителем, вид сбоку; смотрит по направлению движения
+function drawSled(o) {
   const s = o.size, x = o.x, y = o.y;
-  shadow(x + s * 0.1, y + s * 0.35, s * 1.0, s * 0.3);
+  shadow(x, y + s * 0.3, s * 1.05, s * 0.28);
   dangerMark(o);
-  // Кузов
+  ctx.save();
+  if (o.dir < 0) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
+  // Лыжа спереди со стойкой
+  ctx.strokeStyle = '#2a2a33'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + s * 0.55, y - s * 0.15); ctx.lineTo(x + s * 0.6, y + s * 0.12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + s * 0.2, y + s * 0.15); ctx.lineTo(x + s * 0.95, y + s * 0.15);
+  ctx.quadraticCurveTo(x + s * 1.12, y + s * 0.13, x + s * 1.1, y - s * 0.02); ctx.stroke();
+  // Гусеница с бегущими траками
+  ctx.fillStyle = '#26262e';
+  roundRect(x - s * 0.95, y - s * 0.12, s * 1.05, s * 0.3, s * 0.13); ctx.fill();
+  ctx.fillStyle = '#4a4a55';
+  const step = s * 0.15, off = ((o.wheel || 0) * s * 0.04) % step;
+  for (let tx = x - s * 0.9 + off; tx < x + s * 0.05; tx += step) ctx.fillRect(tx, y + s * 0.1, s * 0.06, s * 0.06);
+  ctx.fillStyle = '#777';
+  for (const wx of [x - s * 0.78, x - s * 0.42, x - s * 0.08]) { ctx.beginPath(); ctx.arc(wx, y + s * 0.03, s * 0.08, 0, 7); ctx.fill(); }
+  // Корпус
   ctx.fillStyle = o.color;
-  roundRect(x - s * 0.95, y - s * 0.45, s * 1.9, s * 0.6, s * 0.15); ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(x - s * 0.55, y - s * 0.45); ctx.lineTo(x - s * 0.35, y - s * 0.85);
-  ctx.lineTo(x + s * 0.4, y - s * 0.85); ctx.lineTo(x + s * 0.6, y - s * 0.45); ctx.closePath(); ctx.fill();
-  // Окна
-  ctx.fillStyle = '#bfe3ff';
-  ctx.beginPath();
-  ctx.moveTo(x - s * 0.45, y - s * 0.48); ctx.lineTo(x - s * 0.3, y - s * 0.78);
-  ctx.lineTo(x - s * 0.02, y - s * 0.78); ctx.lineTo(x - s * 0.02, y - s * 0.48); ctx.closePath(); ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(x + s * 0.06, y - s * 0.48); ctx.lineTo(x + s * 0.06, y - s * 0.78);
-  ctx.lineTo(x + s * 0.35, y - s * 0.78); ctx.lineTo(x + s * 0.5, y - s * 0.48); ctx.closePath(); ctx.fill();
-  // Снег на крыше
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.ellipse(x + s * 0.02, y - s * 0.86, s * 0.42, s * 0.1, 0, 0, Math.PI * 2); ctx.fill();
-  // Колёса и фары
-  ctx.fillStyle = '#222';
-  ctx.beginPath(); ctx.arc(x - s * 0.55, y + s * 0.15, s * 0.22, 0, 7); ctx.arc(x + s * 0.55, y + s * 0.15, s * 0.22, 0, 7); ctx.fill();
-  ctx.fillStyle = '#888';
-  ctx.beginPath(); ctx.arc(x - s * 0.55, y + s * 0.15, s * 0.09, 0, 7); ctx.arc(x + s * 0.55, y + s * 0.15, s * 0.09, 0, 7); ctx.fill();
+  ctx.moveTo(x - s * 0.95, y - s * 0.12); ctx.lineTo(x - s * 0.9, y - s * 0.38);
+  ctx.lineTo(x + s * 0.2, y - s * 0.42); ctx.lineTo(x + s * 0.95, y - s * 0.2);
+  ctx.quadraticCurveTo(x + s * 1.02, y - s * 0.08, x + s * 0.85, y - s * 0.05);
+  ctx.lineTo(x + s * 0.1, y - s * 0.08); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath(); ctx.moveTo(x + s * 0.2, y - s * 0.4); ctx.lineTo(x + s * 0.9, y - s * 0.2); ctx.lineTo(x + s * 0.3, y - s * 0.28); ctx.closePath(); ctx.fill();
+  // Фара и стекло
   ctx.fillStyle = '#fff6a0';
-  ctx.fillRect(x + s * 0.82, y - s * 0.35, s * 0.12, s * 0.12);
+  ctx.beginPath(); ctx.ellipse(x + s * 0.86, y - s * 0.17, s * 0.06, s * 0.04, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(170,220,255,0.75)';
+  ctx.beginPath(); ctx.moveTo(x + s * 0.18, y - s * 0.42); ctx.lineTo(x + s * 0.3, y - s * 0.72); ctx.lineTo(x + s * 0.42, y - s * 0.68); ctx.lineTo(x + s * 0.4, y - s * 0.36); ctx.closePath(); ctx.fill();
+  // Сиденье
+  ctx.fillStyle = '#1d1d24';
+  roundRect(x - s * 0.75, y - s * 0.5, s * 0.8, s * 0.1, s * 0.05); ctx.fill();
+  // Водитель
+  ctx.strokeStyle = '#2a3a5a'; ctx.lineWidth = s * 0.13;
+  ctx.beginPath(); ctx.moveTo(x - s * 0.35, y - s * 0.52); ctx.lineTo(x - s * 0.02, y - s * 0.55); ctx.lineTo(x + s * 0.02, y - s * 0.3); ctx.stroke();
+  ctx.fillStyle = o.jacket;
+  ctx.beginPath(); ctx.ellipse(x - s * 0.3, y - s * 0.78, s * 0.17, s * 0.27, 0.35, 0, 7); ctx.fill();
+  ctx.strokeStyle = o.jacket; ctx.lineWidth = s * 0.09;
+  ctx.beginPath(); ctx.moveTo(x - s * 0.22, y - s * 0.9); ctx.lineTo(x + s * 0.05, y - s * 0.78); ctx.lineTo(x + s * 0.2, y - s * 0.66); ctx.stroke();
+  // Шлем с визором
+  ctx.fillStyle = o.color;
+  ctx.beginPath(); ctx.arc(x - s * 0.18, y - s * 1.1, s * 0.16, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1d2a44';
+  ctx.beginPath(); ctx.ellipse(x - s * 0.07, y - s * 1.1, s * 0.07, s * 0.08, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+// Лыжник: шапка с помпоном, шарф и палки
+function drawSkier(o) {
+  const s = o.size, x = o.x, y = o.y;
+  shadow(x, y + s * 0.1, s * 0.9, s * 0.2);
+  dangerMark(o);
+  ctx.save();
+  if (o.dir < 0) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
+  const bob = Math.sin((o.wheel || 0) * 0.5) * s * 0.04;
+  // Лыжи
+  ctx.strokeStyle = o.color; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - s * 0.8, y); ctx.lineTo(x + s * 0.75, y);
+  ctx.quadraticCurveTo(x + s * 0.92, y, x + s * 0.9, y - s * 0.1); ctx.stroke();
+  // Ноги (полуприсед)
+  ctx.strokeStyle = '#2a3a5a'; ctx.lineWidth = s * 0.14;
+  ctx.beginPath(); ctx.moveTo(x - s * 0.1, y - s * 0.05); ctx.lineTo(x + s * 0.12, y - s * 0.4 + bob); ctx.lineTo(x - s * 0.08, y - s * 0.7 + bob); ctx.stroke();
+  // Палки
+  ctx.strokeStyle = '#555'; ctx.lineWidth = s * 0.035;
+  ctx.beginPath(); ctx.moveTo(x + s * 0.1, y - s * 0.9 + bob); ctx.lineTo(x - s * 0.55, y - s * 0.05); ctx.stroke();
+  // Куртка и руки
+  ctx.fillStyle = o.jacket;
+  ctx.beginPath(); ctx.ellipse(x - s * 0.02, y - s * 0.95 + bob, s * 0.17, s * 0.3, 0.4, 0, 7); ctx.fill();
+  ctx.strokeStyle = o.jacket; ctx.lineWidth = s * 0.09;
+  ctx.beginPath(); ctx.moveTo(x + s * 0.02, y - s * 1.05 + bob); ctx.lineTo(x + s * 0.12, y - s * 0.88 + bob); ctx.stroke();
+  // Шарф
+  ctx.strokeStyle = o.color; ctx.lineWidth = s * 0.08;
+  ctx.beginPath(); ctx.moveTo(x + s * 0.02, y - s * 1.2 + bob); ctx.quadraticCurveTo(x - s * 0.25, y - s * 1.2 + bob, x - s * 0.4, y - s * 1.08 + bob * 2); ctx.stroke();
+  // Голова, шапка, помпон
+  ctx.fillStyle = '#f5c9a5';
+  ctx.beginPath(); ctx.arc(x + s * 0.08, y - s * 1.33 + bob, s * 0.13, 0, 7); ctx.fill();
+  ctx.fillStyle = o.color;
+  ctx.beginPath(); ctx.arc(x + s * 0.07, y - s * 1.38 + bob, s * 0.14, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x + s * 0.05, y - s * 1.55 + bob, s * 0.06, 0, 7); ctx.fill();
+  ctx.restore();
 }
 
 function drawHouse(o) {
@@ -1007,7 +1085,7 @@ function drawBall() {
 
 const DRAW = {
   tree: drawTree, rock: drawRock, snowman: drawSnowman, fire: drawFire, snow: drawSnowPile, coin: drawCoin,
-  magnet: drawPower, shield: drawPower, car: drawCar, house: drawHouse, tower: drawTower,
+  magnet: drawPower, shield: drawPower, sled: drawSled, skier: drawSkier, house: drawHouse, tower: drawTower,
   finish: drawFinish, castle: drawCastle,
 };
 const FLAT = { fire: 1, snow: 1, coin: 1, finish: 1 };
@@ -1075,13 +1153,13 @@ function updateFlakes(dt) {
 function menuUpdate(dt) {
   const dy = 120 * dt;
   S.z = 1;
-  for (const o of objs) o.y -= dy;
+  for (const o of objs) { o.y -= dy; if (o.vx) moveMover(o, dt); }
   scrollDecor(dy);
   objs = objs.filter(o => o.y > -BALL_SY - 200);
   S.nextSpawn -= dy;
   if (S.nextSpawn <= 0) {
     const r = Math.random();
-    const type = r < 0.4 ? 'tree' : r < 0.55 ? 'rock' : r < 0.7 ? 'snowman' : r < 0.85 ? 'house' : 'car';
+    const type = r < 0.4 ? 'tree' : r < 0.55 ? 'rock' : r < 0.7 ? 'snowman' : r < 0.8 ? 'house' : r < 0.9 ? 'skier' : 'sled';
     add(type, rand(-W / 2 + 30, W / 2 - 30), H - BALL_SY + 100, rand(25, 55));
     S.nextSpawn = rand(80, 160);
   }
@@ -1279,7 +1357,7 @@ boot();
 
 // Для отладки и автотестов
 window.__game = {
-  S, ball, update, startRun, levelCfg,
+  S, ball, update, startRun, levelCfg, add,
   get objs() { return objs; },
   get save() { return save; },
 };
