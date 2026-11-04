@@ -55,14 +55,26 @@
     padding-top: max(12px, env(safe-area-inset-top));
   }
   #hud.show { display: flex; }
+  .hudLeft { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .pill.small { font-size: 16px; padding: 4px 10px; color: #e6f2ff; }
+  .hudMid { flex: 1; display: flex; justify-content: center; padding: 0 8px; }
+  #hud:not(.endless) #hudScore { display: none; }
+  #hud.endless .levelBox { display: none; }
+  .levelBox { width: min(220px, 100%); background: rgba(13,35,64,.55); border-radius: 14px; padding: 6px 10px 8px; }
+  .levelTop { display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; margin-bottom: 5px; }
+  #hudStars i, #winStars i { font-style: normal; color: rgba(255,255,255,.25); transition: color .2s, transform .3s; display: inline-block; }
+  #hudStars i.on { color: #ffd34d; }
+  .prog { position: relative; height: 10px; border-radius: 6px; background: rgba(255,255,255,.2); }
+  .prog i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #9fd8ff, #fff); }
+  .prog b { position: absolute; right: -6px; top: -8px; font-size: 16px; }
+  #winStars { font-size: 64px; letter-spacing: 6px; line-height: 1; }
+  #winStars i.on { color: #ffd34d; transform: scale(1.2); text-shadow: 0 0 18px rgba(255,211,77,.6); }
   .pill {
     background: rgba(13,35,64,.55); border-radius: 14px; padding: 6px 12px;
     font-size: 20px; font-weight: bold; backdrop-filter: blur(4px);
   }
   #hudScore { font-size: 30px; text-align: center; background: none; text-shadow: 0 2px 4px rgba(0,0,0,.5); }
   #hudCoins { color: #ffd34d; }
-  .sizebar { width: 110px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.2); margin-top: 4px; overflow: hidden; }
-  .sizebar i { display: block; height: 100%; width: 30%; background: linear-gradient(90deg, #9fd8ff, #fff); border-radius: 6px; }
   #pauseBtn {
     pointer-events: auto; width: 46px; height: 46px; border-radius: 14px; border: 0;
     background: rgba(13,35,64,.55); cursor: pointer; margin-left: 8px; padding: 0;
@@ -99,8 +111,8 @@
   .toggles button.off { opacity: .4; }
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
 
-  #toast {
-    position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 10;
+  #toast { white-space: pre-line;
+    position: fixed; left: 50%; top: 10%; transform: translateX(-50%); z-index: 10;
     background: rgba(13,35,64,.85); padding: 12px 20px; border-radius: 14px; font-size: 20px;
     font-weight: bold; display: none; text-align: center; max-width: 90%;
   }
@@ -112,11 +124,17 @@
 <canvas id="game"></canvas>
 
 <div id="hud">
-  <div>
+  <div class="hudLeft">
     <div class="pill" id="hudCoins">● 0</div>
-    <div class="sizebar"><i id="hudSize"></i></div>
+    <div class="pill small" id="hudSize">0.4 м</div>
   </div>
-  <div class="pill" id="hudScore">0</div>
+  <div class="hudMid">
+    <div id="hudScore">0</div>
+    <div class="levelBox">
+      <div class="levelTop"><span id="hudLevel"></span><span id="hudStars"><i>★</i><i>★</i><i>★</i></span></div>
+      <div class="prog"><i id="hudProg"></i><b>🏁</b></div>
+    </div>
+  </div>
   <div class="hudRight">
     <button id="pauseBtn" aria-label="pause"><i></i><i></i></button>
   </div>
@@ -126,8 +144,9 @@
   <div class="pill topcoins" id="menuCoins">● 0</div>
   <h1 data-t="title"></h1>
   <div class="sub" data-t="subtitle"></div>
-  <div class="stat"><span data-t="best"></span>: <b id="menuBest">0</b></div>
+  <div class="stat"><b id="menuStars">0</b> ★ &nbsp;·&nbsp; <span data-t="best"></span>: <b id="menuBest">0</b></div>
   <button class="btn green big" id="playBtn" data-t="play"></button>
+  <button class="btn" id="endlessBtn" data-t="endless"></button>
   <button class="btn" id="shopBtn" data-t="shop"></button>
   <div class="toggles">
     <button id="sndBtn" aria-label="sound">🔊</button>
@@ -164,12 +183,23 @@
 
 <div class="screen" id="over">
   <h2 id="overTitle"></h2>
-  <div class="stat"><span data-t="score"></span>: <b id="overScore">0</b></div>
-  <div class="stat"><span data-t="best"></span>: <b id="overBest">0</b></div>
-  <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> ●</div>
+  <div class="stat" id="overScoreRow"><span data-t="score"></span>: <b id="overScore">0</b></div>
+  <div class="stat" id="overBestRow"><span data-t="best"></span>: <b id="overBest">0</b></div>
+  <div class="stat" id="overSizeRow"><span data-t="sizeLbl"></span>: <b id="overSize">0</b></div>
+  <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> <b>●</b></div>
   <button class="btn gold ad" id="doubleBtn" data-t="doubleCoins"></button>
   <button class="btn green big" id="againBtn" data-t="again"></button>
   <button class="btn ghost" id="overMenuBtn" data-t="menu"></button>
+</div>
+
+<div class="screen" id="win">
+  <h2 id="winTitle"></h2>
+  <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
+  <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
+  <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
+  <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
+  <button class="btn green big" id="winNext"></button>
+  <button class="btn ghost" id="winMenu" data-t="menu"></button>
 </div>
 
 <div id="toast"></div>

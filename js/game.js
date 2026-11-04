@@ -3,7 +3,9 @@
 
 // ---------- Константы и данные ----------
 const BASE_W = 480, BASE_H = 820, MAX_LANE = 720;
-const MIN_R = 9, MAX_R = 72;
+const MIN_R = 9;          // меньше — ком растаял/разбился
+const START_R = 20;       // 20 единиц = 40 см в диаметре
+const SMASH_K = 0.92;     // ком сносит объекты, если r >= size * SMASH_K
 
 const SKINS = [
   { id: 'classic', price: 0,    base: '#ffffff', shade: '#a9c8ea', spot: '#d7e7f7' },
@@ -27,12 +29,29 @@ let save = {
   coins: 0, best: 0, skin: 'classic', owned: ['classic'],
   up: { size: 0, magnet: 0, shield: 0, coin: 0 },
   sound: true, music: true, daily: '', games: 0, hinted: false,
+  level: 1, stars: {},
 };
+
+// Параметры уровня. Цели по размеру подобраны симуляцией бота (см. README).
+function levelCfg(n) {
+  const dur = Math.min(38 + n * 2, 70);              // секунды до финиша
+  const speed = Math.min(300 + n * 6, 430);          // экранная скорость
+  const hard = clamp(n / 25, 0, 1);
+  const grow2 = 3.5 + Math.min(n, 30) * 0.17;        // во сколько раз вырасти для 2 звёзд
+  const grow3 = 7 + Math.min(n, 30) * 0.35;          // ... для 3 звёзд
+  return {
+    n, dur, speed, hard, len: dur * speed,
+    boss: n % 5 === 0,
+    r2: START_R * grow2, r3: START_R * grow3,
+    bossR: START_R * grow2 / SMASH_K,                // крепость: нужен размер как на 2 звезды
+  };
+}
 
 // ---------- Canvas ----------
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let dpr = 1, scale = 1, W = BASE_W, H = BASE_H, FW = BASE_W, OX = 0;
+let dpr = 1, scale = 1, W = BASE_W, H = BASE_H, FW = BASE_W, OX = 0, BALL_SY = 250;
+let side = [];
 
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -42,35 +61,50 @@ function resize() {
   scale = Math.min(cw / BASE_W, ch / BASE_H);
   FW = cw / scale; H = ch / scale;
   W = Math.min(FW, MAX_LANE); OX = (FW - W) / 2;
+  BALL_SY = H * 0.3;
   side = Array.from({ length: OX > 10 ? 30 : 0 }, () => ({ f: Math.random(), y: rand(-50, H + 100), s: rand(30, 60), left: Math.random() < 0.5 }));
 }
-let side = [];
 window.addEventListener('resize', resize);
 
 // ---------- Утилиты ----------
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pick = arr => arr[(Math.random() * arr.length) | 0];
 const $ = id => document.getElementById(id);
 resize();
 
+// Размер кома в метрах (диаметр): r=20 → 0.4 м
+const meters = r => {
+  const m = r * 2 / 100;
+  return (m < 10 ? m.toFixed(1) : Math.round(m)) + ' ' + t('m');
+};
+
 // ---------- Состояние игры ----------
 const S = {
-  mode: 'menu', // menu | play | pause | revive | over
-  t: 0, dist: 0, speed: 0, score: 0, coins: 0,
-  combo: 0, comboT: 0, shake: 0, flash: 0,
-  revived: false, deathReason: 'melt', nextSpawn: 0, doubled: false,
+  mode: 'menu',     // menu | shop | play | pause | revive | over | win
+  run: 'level',     // level | endless
+  cfg: levelCfg(1),
+  t: 0, dist: 0, speed: 0, score: 0, coins: 0, z: 1,
+  combo: 0, comboT: 0, shake: 0, flash: 0, maxR: START_R,
+  revived: false, deathReason: 'melt', nextSpawn: 0, finishSpawned: false,
+  reward: 0, doubled: false,
 };
-const ball = { x: 300, y: 0, r: 20, vx: 0, rot: 0, inv: 0, magnet: 0, shield: 0, targetX: 300 };
+// Мировые координаты: x от центра трассы, y относительно кома (ком всегда в y=0).
+const ball = { x: 0, y: 0, r: START_R, vx: 0, rot: 0, tilt: 0, inv: 0, magnet: 0, shield: 0, targetX: 0 };
 let objs = [], parts = [], texts = [], trail = [], bumps = [];
 const flakes = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), s: rand(1, 3.2), v: rand(0.3, 1) }));
+
+const halfW = () => W / 2 / S.z;               // половина ширины трассы в мире
+const w2s = (x, y) => [W / 2 + x * S.z, BALL_SY + y * S.z];
 
 // ---------- Ввод ----------
 const keys = {};
 let pointerDown = false, lastPX = 0;
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if ((e.code === 'Escape' || e.code === 'KeyP') && S.mode === 'play') pauseGame();
-  else if ((e.code === 'Escape' || e.code === 'KeyP') && S.mode === 'pause') resumeGame();
+  if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (S.mode === 'play') pauseGame(); else if (S.mode === 'pause') resumeGame();
+  }
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -82,7 +116,7 @@ window.addEventListener('pointermove', e => {
   if (!pointerDown || S.mode !== 'play') return;
   const dx = (e.clientX - lastPX) / scale;
   lastPX = e.clientX;
-  ball.targetX = clamp(ball.targetX + dx * 1.25, ball.r, W - ball.r);
+  ball.targetX += dx * 1.25 / S.z;
 });
 window.addEventListener('pointerup', () => { pointerDown = false; });
 window.addEventListener('pointercancel', () => { pointerDown = false; });
@@ -93,10 +127,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && S.mode === 'play') pauseGame();
 });
 
-// ---------- Сохранение ----------
 function persist() { YSDK.save(save); }
 
-// ---------- Экранные сообщения ----------
+// ---------- Сообщения и частицы (в экранных координатах трассы) ----------
 let toastTimer;
 function toast(msg, ms = 2200) {
   const el = $('toast');
@@ -105,96 +138,127 @@ function toast(msg, ms = 2200) {
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, ms);
 }
 
-function floatText(x, y, str, color = '#fff', size = 26) {
+function floatText(wx, wy, str, color = '#fff', size = 26) {
+  const [x, y] = w2s(wx, wy);
   texts.push({ x, y, str, color, size, life: 1 });
 }
 
-function burst(x, y, n, color, spd = 260, size = [3, 7]) {
+function burst(wx, wy, n, color, spd = 260, size = [3, 7], k = 1) {
+  const [x, y] = w2s(wx, wy);
   for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2, v = rand(spd * 0.3, spd);
-    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, r: rand(size[0], size[1]), color, life: rand(0.5, 1), g: 500 });
+    const a = Math.random() * Math.PI * 2, v = rand(spd * 0.3, spd) * k;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80 * k, r: rand(size[0], size[1]) * Math.sqrt(k), color, life: rand(0.5, 1), g: 500 });
   }
 }
 
-// ---------- Спавн объектов ----------
-function difficulty() { return clamp(S.t / 90, 0, 1); }
+// ---------- Спавн ----------
+const CR = { tree: 0.5, rock: 0.75, snowman: 0.6, car: 0.8, house: 0.85, tower: 0.6, fire: 0.7, snow: 0.8, coin: 1, magnet: 1, shield: 1 };
 
 function freeSpot(x, y, r) {
+  const gap = 30 / S.z;
   for (const o of objs) {
+    if (o.type === 'finish' || o.type === 'castle') continue;
     const dx = o.x - x, dy = o.y - y;
-    if (dx * dx + dy * dy < (o.r + r + 30) ** 2) return false;
+    if (dx * dx + dy * dy < (o.r + r + gap) ** 2) return false;
   }
   return true;
 }
 
 function add(type, x, y, size, extra = {}) {
-  const cr = { tree: 0.5, rock: 0.75, snowman: 0.6, fire: 0.7, snow: 0.8, coin: 1, magnet: 1, shield: 1 }[type] * size;
+  const cr = (CR[type] || 1) * size;
   if (!freeSpot(x, y, cr)) return null;
   const o = { type, x, y, size, r: cr, dead: false, seed: Math.random(), ...extra };
+  if (type === 'house') o.color = pick(['#b5523b', '#c9a227', '#6b8fb5', '#8a5a3c', '#5f9e6e']);
+  if (type === 'car') o.color = pick(['#e8324a', '#2a7fd4', '#f0a01e', '#3fbf8a', '#7d4bd4']);
   objs.push(o);
   return o;
 }
 
+function hardness() {
+  return S.run === 'level' ? S.cfg.hard : clamp(S.t / 120, 0, 1);
+}
+
 function obstacleSize() {
-  // Размер препятствий подстраивается под ком: часть можно снести, часть — нет.
-  const d = difficulty();
-  const k = Math.random() < 0.55 - d * 0.15 ? rand(0.45, 0.95) : rand(1.15, 1.7 + d * 0.3);
-  return clamp(ball.r * k, 12, 95);
+  // Часть препятствий меньше кома (можно снести), часть — больше (объезжай).
+  const h = hardness();
+  const k = Math.random() < 0.6 - h * 0.15 ? rand(0.45, 0.95) : rand(1.15, 1.7 + h * 0.3);
+  return Math.max(10, ball.r * k);
+}
+
+// Мир «взрослеет» вместе с комом: ёлки → машины → дома → башни.
+function typeFor(s) {
+  if (s < 30) return pick(['tree', 'tree', 'rock', 'snowman']);
+  if (s < 70) return pick(['tree', 'snowman', 'rock', 'car']);
+  if (s < 160) return pick(['car', 'house', 'tree', 'house', 'snowman']);
+  if (s < 400) return pick(['house', 'house', 'tower', 'tree', 'car']);
+  return pick(['tower', 'house', 'tree', 'tower']);
 }
 
 function spawnRow() {
-  const y = H + 120;
-  const d = difficulty();
+  const z = S.z, hw = halfW(), m = 40 / z;
+  const y = (H - BALL_SY + 120) / z;
+  const rx = () => rand(-hw + m, hw - m);
+  const h = hardness();
   const roll = Math.random();
-  const margin = 40;
 
   if (roll < 0.30) {
     const n = 1 + (Math.random() * 3 | 0);
-    for (let i = 0; i < n; i++) add('snow', rand(margin, W - margin), y + rand(0, 80), rand(14, 22));
-  } else if (roll < 0.52) {
-    const x = rand(margin + 20, W - margin - 20);
-    const curve = rand(-1, 1) * 60;
-    for (let i = 0; i < 6; i++) add('coin', x + Math.sin(i / 5 * Math.PI) * curve, y + i * 50, 17);
+    for (let i = 0; i < n; i++) add('snow', rx(), y + rand(0, 80) / z, rand(14, 22) / z);
+  } else if (roll < 0.50) {
+    const x = rand(-hw + m * 2, hw - m * 2);
+    const curve = rand(-1, 1) * 60 / z;
+    for (let i = 0; i < 6; i++) add('coin', x + Math.sin(i / 5 * Math.PI) * curve, y + i * 50 / z, 17 / z);
   } else if (roll < 0.88) {
-    const n = 1 + (Math.random() < 0.35 + d * 0.4 ? 1 : 0) + (Math.random() < d * 0.3 ? 1 : 0);
+    const n = 1 + (Math.random() < 0.35 + h * 0.4 ? 1 : 0) + (Math.random() < h * 0.3 ? 1 : 0);
     for (let i = 0; i < n; i++) {
       const s = obstacleSize();
-      const r2 = Math.random();
-      const type = r2 < 0.55 ? 'tree' : r2 < 0.85 ? 'rock' : 'snowman';
-      add(type, rand(margin, W - margin), y + rand(0, 100), type === 'rock' ? s * 0.85 : s);
+      const type = typeFor(s);
+      add(type, rx(), y + rand(0, 100) / z, type === 'rock' ? s * 0.85 : s);
     }
-    if (Math.random() < 0.5) add('snow', rand(margin, W - margin), y + rand(120, 180), rand(14, 20));
-    if (Math.random() < 0.4) add('coin', rand(margin, W - margin), y + rand(-40, 160), 17);
+    if (Math.random() < 0.5) add('snow', rx(), y + rand(120, 180) / z, rand(14, 20) / z);
+    if (Math.random() < 0.4) add('coin', rx(), y + rand(-40, 160) / z, 17 / z);
   } else if (roll < 0.95) {
-    if (S.t > 20) add('fire', rand(margin, W - margin), y, rand(26, 34));
-    else add('snow', rand(margin, W - margin), y, 18);
+    if (S.t > 12) add('fire', rx(), y, rand(26, 34) / z);
+    else add('snow', rx(), y, 18 / z);
   } else {
-    add(Math.random() < 0.5 ? 'magnet' : 'shield', rand(margin + 20, W - margin - 20), y, 18);
+    add(Math.random() < 0.5 ? 'magnet' : 'shield', rx(), y, 18 / z);
   }
-  S.nextSpawn = rand(110, 170) - d * 30;
+  S.nextSpawn = rand(110, 170) - h * 30;
 }
 
 // ---------- Управление забегом ----------
-function startRun() {
+function startRun(run, level) {
   Sfx.init(); Sfx.resume();
+  S.run = run;
+  if (run === 'level') S.cfg = levelCfg(level || save.level);
   objs = []; parts = []; texts = []; trail = [];
   bumps = Array.from({ length: 26 }, () => ({ x: rand(0, W), y: rand(0, H + 200), s: rand(10, 30) }));
-  Object.assign(S, { t: 0, dist: 0, speed: 300, score: 0, coins: 0, combo: 0, comboT: 0, shake: 0, flash: 0, revived: false, nextSpawn: 200, doubled: false });
-  Object.assign(ball, { x: W / 2, targetX: W / 2, y: H * 0.3, r: 20 + save.up.size * 3, vx: 0, rot: 0, inv: 1, magnet: 0, shield: 0 });
-  for (let i = 0; i < 4; i++) add('snow', W / 2 + rand(-80, 80), H * 0.6 + i * 140, 18);
+  Object.assign(S, {
+    t: 0, dist: 0, speed: 300, score: 0, coins: 0, z: 1, combo: 0, comboT: 0, shake: 0, flash: 0,
+    revived: false, nextSpawn: 200, finishSpawned: false, reward: 0, doubled: false,
+  });
+  const r0 = START_R + save.up.size * 3;
+  Object.assign(ball, { x: 0, targetX: 0, r: r0, vx: 0, rot: 0, tilt: 0, inv: 1, magnet: 0, shield: 0 });
+  S.maxR = r0;
+  for (let i = 0; i < 4; i++) add('snow', rand(-80, 80), (H * 0.3 + i * 140), 18);
   setMode('play');
+  $('hudLevel').textContent = run === 'level' ? t('levelN', { n: S.cfg.n }) : '';
   if (!save.hinted) {
     save.hinted = true; persist();
     toast(t('hint'), 4500);
+  } else if (run === 'level' && S.cfg.boss) {
+    toast(t('bossLevel', { s: meters(S.cfg.bossR * SMASH_K) }), 3000);
   }
 }
 
 function setMode(m) {
   S.mode = m;
-  ['menu', 'shop', 'pause', 'revive', 'over'].forEach(id => $(id).classList.toggle('show', id === m));
+  ['menu', 'shop', 'pause', 'revive', 'over', 'win'].forEach(id => $(id).classList.toggle('show', id === m));
   $('hud').classList.toggle('show', m === 'play' || m === 'pause' || m === 'revive');
+  $('hud').classList.toggle('endless', S.run === 'endless');
   if (m === 'play') YSDK.gameplayStart(); else YSDK.gameplayStop();
-  if (m === 'menu' || m === 'over' || m === 'shop') YSDK.showBanner(); else YSDK.hideBanner();
+  if (m === 'menu' || m === 'over' || m === 'shop' || m === 'win') YSDK.showBanner(); else YSDK.hideBanner();
+  if (m === 'menu') { S.z = 1; }
 }
 
 function pauseGame() { if (S.mode === 'play') setMode('pause'); }
@@ -210,7 +274,8 @@ function die(reason) {
   Sfx.over();
   S.shake = 18;
   burst(ball.x, ball.y, 40, '#fff', 420, [3, 9]);
-  if (!S.revived && S.score > 150) showRevive();
+  const progressed = S.run === 'level' ? S.dist > S.cfg.len * 0.25 : S.score > 150;
+  if (!S.revived && reason !== 'boss' && progressed) showRevive();
   else finishRun();
 }
 
@@ -233,87 +298,141 @@ async function doRevive() {
   const ok = await YSDK.showRewarded();
   if (!ok) { toast(t('adFail')); finishRun(); return; }
   S.revived = true;
-  ball.r = Math.max(26, 20 + save.up.size * 3);
+  ball.r = Math.max(START_R + 6, S.maxR * 0.6);
   ball.inv = 2.5;
-  objs = objs.filter(o => o.y > ball.y + 400 || o.type === 'coin' || o.type === 'snow');
+  objs = objs.filter(o => o.y * S.z > 450 || o.type === 'coin' || o.type === 'snow' || o.type === 'finish' || o.type === 'castle');
   setMode('play');
   last = performance.now();
 }
 
+// Забег окончен неудачей (или выход в меню).
 function finishRun() {
   clearInterval(reviveInt);
-  const score = Math.floor(S.score);
-  const isBest = score > save.best;
-  if (isBest) save.best = score;
   save.coins += S.coins;
   save.games++;
+  const score = Math.floor(S.score);
+  let isBest = false;
+  if (S.run === 'endless') {
+    isBest = score > save.best;
+    if (isBest) save.best = score;
+    YSDK.submitScore(save.best);
+  }
   persist();
-  YSDK.submitScore(save.best);
-  $('overTitle').textContent = isBest && score > 0 ? t('newBest') : (S.deathReason === 'melt' ? t('gameOver') : t('crashed'));
+  let title = S.deathReason === 'melt' ? t('gameOver') : S.deathReason === 'boss' ? t('bossFail') : t('crashed');
+  if (isBest && score > 0) title = t('newBest');
+  $('overTitle').textContent = title;
+  $('overScoreRow').style.display = S.run === 'endless' ? '' : 'none';
+  $('overBestRow').style.display = S.run === 'endless' ? '' : 'none';
+  $('overSizeRow').style.display = S.run === 'level' ? '' : 'none';
   $('overScore').textContent = score;
   $('overBest').textContent = save.best;
+  $('overSize').textContent = meters(S.maxR);
   $('overCoins').textContent = S.coins;
   $('doubleBtn').style.display = S.coins >= 5 ? '' : 'none';
   $('doubleBtn').disabled = false;
+  S.reward = S.coins;
   setMode('over');
 }
 
-// ---------- Обновление ----------
-function hitObstacle(o) {
-  const canSmash = ball.shield > 0 || ball.r >= o.size * 0.92;
-  if (canSmash) {
-    o.dead = true;
-    S.combo = S.comboT > 0 ? S.combo + 1 : 1;
-    S.comboT = 2.2;
-    const mult = Math.min(S.combo, 10);
-    const pts = Math.round(o.size * (o.type === 'snowman' ? 4 : 2.5) * mult);
-    S.score += pts;
-    ball.r = Math.min(MAX_R, ball.r + o.size * 0.06);
-    const big = o.size > 40;
-    Sfx.smash(big);
-    S.shake = Math.max(S.shake, big ? 10 : 5);
-    const col = o.type === 'tree' ? '#2f7d4f' : o.type === 'rock' ? '#7d8796' : '#fff';
-    burst(o.x, o.y, 14, col, 300);
-    burst(o.x, o.y, 12, '#fff', 260);
-    floatText(o.x, o.y - 20, '+' + pts, '#ffd34d', 24 + Math.min(mult, 6) * 2);
-    if (S.combo >= 3) floatText(ball.x, ball.y - ball.r - 30, t('combo', { n: mult }), '#7fe0ff', 26);
-    if (o.type === 'snowman') { S.coins += 3; floatText(o.x + 20, o.y, '+3 ●', '#ffd34d'); }
-  } else if (ball.inv <= 0) {
-    Sfx.hit();
-    S.shake = 16; S.flash = 0.35;
-    S.combo = 0;
-    burst(ball.x, ball.y, 22, '#fff', 340);
-    ball.r *= 0.62;
-    ball.inv = 1.2;
-    const push = ball.x < o.x ? -1 : 1;
-    ball.targetX = clamp(ball.x + push * (o.r + ball.r + 40), ball.r, W - ball.r);
-    ball.vx = push * 600;
-    if (ball.r < MIN_R) die('crash');
+// Уровень пройден.
+function levelComplete(bossWin) {
+  const c = S.cfg, r = ball.r;
+  const stars = 1 + (r >= c.r2 ? 1 : 0) + (r >= c.r3 ? 1 : 0);
+  const reward = 20 + c.n * 5 + stars * 10 + (bossWin ? 100 : 0);
+  S.reward = reward + S.coins;
+  save.coins += S.reward;
+  save.stars[c.n] = Math.max(save.stars[c.n] || 0, stars);
+  if (c.n >= save.level) save.level = c.n + 1;
+  save.games++;
+  persist();
+  Sfx.win();
+  $('winTitle').textContent = bossWin ? t('bossWin') : t('levelDone', { n: c.n });
+  $('winSize').textContent = meters(r);
+  $('winCoins').textContent = S.reward;
+  const st = $('winStars').children;
+  for (let i = 0; i < 3; i++) {
+    st[i].className = '';
+    if (i < stars) setTimeout(() => { st[i].className = 'on'; Sfx.coin(); }, 300 + i * 350);
+  }
+  $('winNext').textContent = t('levelN', { n: save.level });
+  $('winDouble').style.display = '';
+  $('winDouble').disabled = false;
+  setMode('win');
+}
+
+// ---------- Столкновения ----------
+function smash(o, bonus = 1) {
+  o.dead = true;
+  S.combo = S.comboT > 0 ? S.combo + 1 : 1;
+  S.comboT = 2.2;
+  const mult = Math.min(S.combo, 10);
+  // Очки растут с «масштабом» объекта: снести дом ценнее, чем ёлку
+  const rel = o.size / START_R;
+  const pts = Math.round(10 * Math.sqrt(rel) * (o.type === 'snowman' ? 1.6 : 1) * mult * bonus);
+  S.score += pts;
+  ball.r += o.size * 0.035;
+  const k = clamp(o.size * S.z / 30, 0.7, 3);
+  Sfx.smash(k > 1.3);
+  S.shake = Math.max(S.shake, 4 + k * 3);
+  const col = { tree: '#2f7d4f', rock: '#7d8796', car: o.color, house: o.color, tower: '#8a8f9c', snowman: '#fff' }[o.type] || '#fff';
+  burst(o.x, o.y, 14, col, 300, [3, 7], k);
+  burst(o.x, o.y, 12, '#fff', 260, [3, 7], k);
+  if (o.type === 'house') burst(o.x, o.y, 8, '#6b4325', 280, [3, 6], k);
+  floatText(o.x, o.y - o.size * 0.5, '+' + pts, '#ffd34d', 24 + Math.min(mult, 6) * 2);
+  if (S.combo >= 3) floatText(ball.x, -ball.r - 30 / S.z, t('combo', { n: mult }), '#7fe0ff', 26);
+  if (o.type === 'snowman' || o.type === 'house') {
+    const c = o.type === 'house' ? 5 : 3;
+    S.coins += c; floatText(o.x + 20 / S.z, o.y, '+' + c + ' ●', '#ffd34d');
   }
 }
 
+function hitObstacle(o) {
+  if (ball.shield > 0 || ball.r >= o.size * SMASH_K) { smash(o); return; }
+  if (ball.inv > 0) return;
+  Sfx.hit();
+  S.shake = 16; S.flash = 0.35;
+  S.combo = 0;
+  burst(ball.x, ball.y, 22, '#fff', 340);
+  ball.r *= 0.62;
+  ball.inv = 1.2;
+  const push = ball.x < o.x ? -1 : 1;
+  ball.targetX = ball.x + push * (o.r + ball.r + 40 / S.z);
+  ball.vx = push * 600 / S.z;
+  if (ball.r < MIN_R) die('crash');
+}
+
+// ---------- Обновление ----------
 function update(dt) {
   S.t += dt;
-  const d = difficulty();
-  S.speed = 300 + d * 280 + Math.min(S.t, 300) * 0.4;
-  const dy = S.speed * dt;
-  S.dist += dy;
-  S.score += dy * 0.02;
+  const base = S.run === 'level' ? S.cfg.speed : 300 + clamp(S.t / 90, 0, 1) * 280;
+  S.speed = base + Math.min(S.t, 120) * 1.0;
+  const sdy = S.speed * dt;          // экранное смещение
+  const z = S.z, wdy = sdy / z;      // мировое смещение
+  S.dist += sdy;
+  S.score += sdy * 0.02;
+  const h = hardness();
 
   // Управление
+  const hw = halfW();
   const kdir = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
-  if (kdir) ball.targetX = clamp(ball.targetX + kdir * 620 * dt, ball.r, W - ball.r);
-  ball.targetX = clamp(ball.targetX, ball.r, W - ball.r);
+  if (kdir) ball.targetX += kdir * 620 / z * dt;
+  const lim = Math.max(0, hw - ball.r);
+  ball.targetX = clamp(ball.targetX, -lim, lim);
   const prevX = ball.x;
   ball.x += (ball.targetX - ball.x) * Math.min(1, dt * 14) + ball.vx * dt;
   ball.vx *= Math.pow(0.02, dt);
-  ball.x = clamp(ball.x, ball.r, W - ball.r);
-  ball.rot += dy / ball.r;
-  ball.tilt = clamp((ball.x - prevX) / dt / 900, -0.35, 0.35);
+  ball.x = clamp(ball.x, -lim, lim);
+  ball.rot += wdy / ball.r;
+  ball.tilt = clamp((ball.x - prevX) * z / dt / 900, -0.35, 0.35);
 
-  // Таяние: ком медленно уменьшается, нужно собирать снег
-  ball.r -= (0.35 + d * 0.5 + ball.r * 0.012) * dt;
+  // Таяние: ком постоянно уменьшается, нужно собирать снег
+  ball.r -= (0.3 + ball.r * (0.011 + h * 0.006)) * dt;
   if (ball.r < MIN_R) { die('melt'); return; }
+  S.maxR = Math.max(S.maxR, ball.r);
+
+  // Камера отдаляется по мере роста кома
+  const zt = Math.min(1, Math.pow(24 / ball.r, 0.7));
+  S.z += (zt - S.z) * Math.min(1, dt * 1.5);
 
   ball.inv = Math.max(0, ball.inv - dt);
   ball.magnet = Math.max(0, ball.magnet - dt);
@@ -322,33 +441,59 @@ function update(dt) {
   S.shake = Math.max(0, S.shake - dt * 40);
   S.flash = Math.max(0, S.flash - dt);
 
-  // След кома в снегу
-  for (const p of trail) p.y -= dy;
-  trail.push({ x: ball.x, y: ball.y, r: ball.r });
-  while (trail.length && trail[0].y < -100) trail.shift();
-  scrollDecor(dy);
+  // След
+  for (const p of trail) p.y -= wdy;
+  trail.push({ x: ball.x, y: 0, r: ball.r });
+  while (trail.length && trail[0].y * S.z < -BALL_SY - 100) trail.shift();
+  scrollDecor(sdy);
 
-  // Спавн
-  S.nextSpawn -= dy;
-  if (S.nextSpawn <= 0) spawnRow();
+  // Спавн и финиш
+  const remaining = S.run === 'level' ? S.cfg.len - S.dist : Infinity;
+  const ahead = H - BALL_SY + 150;
+  if (remaining > ahead + 250) {
+    S.nextSpawn -= sdy;
+    if (S.nextSpawn <= 0) spawnRow();
+  } else if (!S.finishSpawned && remaining <= ahead) {
+    S.finishSpawned = true;
+    objs.push({ type: S.cfg.boss ? 'castle' : 'finish', x: 0, y: ahead / S.z, size: S.cfg.bossR, r: 0, dead: false, seed: 0 });
+  }
 
   // Объекты
-  const magR = 200 + ball.r * 2;
+  const magR = (200 + ball.r * 2 * S.z) / S.z;
   for (const o of objs) {
-    o.y -= dy;
+    o.y -= wdy;
     if (o.dead) continue;
+    if (o.type === 'finish' || o.type === 'castle') {
+      if (o.y <= ball.r * 0.5) {
+        if (o.type === 'finish') { levelComplete(false); return; }
+        if (ball.r >= o.size * SMASH_K || ball.shield > 0) {
+          o.dead = true;
+          S.shake = 30;
+          for (let i = -2; i <= 2; i++) burst(i * halfW() * 0.35, 0, 18, i % 2 ? '#bfe6ff' : '#fff', 500, [4, 10], 2);
+          Sfx.smash(true);
+          levelComplete(true);
+          return;
+        }
+        die('boss');
+        return;
+      }
+      continue;
+    }
     const isPick = o.type === 'snow' || o.type === 'coin';
     if (ball.magnet > 0 && isPick) {
-      const mx = ball.x - o.x, my = ball.y - o.y, md = Math.hypot(mx, my);
-      if (md < magR && md > 1) { o.x += mx / md * 700 * dt; o.y += my / md * 700 * dt; }
+      const mx = ball.x - o.x, my = -o.y, md = Math.hypot(mx, my);
+      if (md < magR && md > 1) { o.x += mx / md * 700 / z * dt; o.y += my / md * 700 / z * dt; }
     }
-    const dx = o.x - ball.x, dy2 = o.y - ball.y;
+    const dx = o.x - ball.x, dy2 = o.y;
     const dist = Math.hypot(dx, dy2);
     if (o.type === 'fire') {
       if (dist < ball.r + o.r * 1.4) {
         if (ball.shield <= 0) {
-          ball.r -= 22 * dt;
-          if (Math.random() < 0.5) parts.push({ x: ball.x + rand(-ball.r, ball.r) * 0.6, y: ball.y - ball.r * 0.5, vx: rand(-30, 30), vy: rand(-160, -90), r: rand(5, 10), color: 'rgba(230,240,255,0.7)', life: 0.6, g: -40 });
+          ball.r -= (12 + ball.r * 0.25) * dt;
+          if (Math.random() < 0.5) {
+            const [sx, sy] = w2s(ball.x + rand(-ball.r, ball.r) * 0.6, -ball.r * 0.5);
+            parts.push({ x: sx, y: sy, vx: rand(-30, 30), vy: rand(-160, -90), r: rand(5, 10), color: 'rgba(230,240,255,0.7)', life: 0.6, g: -40 });
+          }
           if (Math.random() < 0.1) Sfx.sizzle();
           if (ball.r < MIN_R) { die('melt'); return; }
         } else { o.dead = true; burst(o.x, o.y, 16, '#ff9a3c', 260); Sfx.smash(false); }
@@ -357,21 +502,19 @@ function update(dt) {
     }
     if (dist > ball.r + o.r) continue;
     switch (o.type) {
-      case 'snow': {
+      case 'snow':
         o.dead = true;
-        const g = 2.6 * (1 - (ball.r / MAX_R) * 0.55);
-        if (ball.r < MAX_R - 0.5) ball.r = Math.min(MAX_R, ball.r + g);
+        ball.r += 1.2 + ball.r * 0.028;
         S.score += 10;
         Sfx.snow();
         burst(o.x, o.y, 8, '#fff', 160, [2, 5]);
         break;
-      }
       case 'coin': {
         o.dead = true;
         const v = 1 + save.up.coin;
         S.coins += v;
         Sfx.coin();
-        floatText(o.x, o.y - 10, '+' + v, '#ffd34d', 22);
+        floatText(o.x, o.y - 10 / z, '+' + v, '#ffd34d', 22);
         burst(o.x, o.y, 6, '#ffd34d', 150, [2, 4]);
         break;
       }
@@ -385,16 +528,20 @@ function update(dt) {
         hitObstacle(o);
     }
   }
-  objs = objs.filter(o => !o.dead && o.y > -200);
+  const minY = (-BALL_SY - 250) / S.z;
+  objs = objs.filter(o => !o.dead && o.y > minY);
 
+  updateParts(dt, sdy);
+  updateHud();
+}
+
+function updateParts(dt, sdy) {
   for (const p of parts) {
-    p.x += p.vx * dt; p.y += p.vy * dt - dy * 0.6; p.vy += p.g * dt; p.life -= dt * 1.4;
+    p.x += p.vx * dt; p.y += p.vy * dt - sdy * 0.6; p.vy += p.g * dt; p.life -= dt * 1.4;
   }
   parts = parts.filter(p => p.life > 0);
   for (const tx of texts) { tx.y -= 60 * dt; tx.life -= dt * 0.9; }
   texts = texts.filter(tx => tx.life > 0);
-
-  updateHud();
 }
 
 let hudCache = {};
@@ -402,8 +549,18 @@ function updateHud() {
   const sc = Math.floor(S.score);
   if (hudCache.s !== sc) { $('hudScore').textContent = sc; hudCache.s = sc; }
   if (hudCache.c !== S.coins) { $('hudCoins').textContent = '● ' + S.coins; hudCache.c = S.coins; }
-  const pct = Math.round((ball.r - MIN_R) / (MAX_R - MIN_R) * 100);
-  if (hudCache.p !== pct) { $('hudSize').style.width = clamp(pct, 0, 100) + '%'; hudCache.p = pct; }
+  const m = meters(ball.r);
+  if (hudCache.m !== m) { $('hudSize').textContent = m; hudCache.m = m; }
+  if (S.run === 'level') {
+    const pct = clamp(S.dist / S.cfg.len * 100, 0, 100).toFixed(1);
+    if (hudCache.p !== pct) { $('hudProg').style.width = pct + '%'; hudCache.p = pct; }
+    // Звёзды, которые уже «набраны» по размеру
+    const st = 1 + (ball.r >= S.cfg.r2 ? 1 : 0) + (ball.r >= S.cfg.r3 ? 1 : 0);
+    if (hudCache.st !== st) {
+      [...$('hudStars').children].forEach((el, i) => el.classList.toggle('on', i < st));
+      hudCache.st = st;
+    }
+  }
 }
 
 function scrollDecor(dy) {
@@ -413,19 +570,19 @@ function scrollDecor(dy) {
 
 // ---------- Отрисовка ----------
 function drawBackground() {
+  // Чем больше ком, тем холоднее и «выше» становится небо/снег
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#e9f3ff');
-  g.addColorStop(1, '#cfe2f7');
+  const deep = clamp(1 - S.z, 0, 0.9);
+  g.addColorStop(0, `rgb(${233 - deep * 25 | 0},${243 - deep * 15 | 0},255)`);
+  g.addColorStop(1, `rgb(${207 - deep * 30 | 0},${226 - deep * 20 | 0},${247 - deep * 5 | 0})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-  // Бугорки на снегу для ощущения скорости
   ctx.fillStyle = 'rgba(160,190,225,0.35)';
   for (const b of bumps) {
     ctx.beginPath();
     ctx.ellipse(b.x, b.y, b.s, b.s * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Края трассы
   const edge = ctx.createLinearGradient(0, 0, 50, 0);
   edge.addColorStop(0, 'rgba(120,160,210,0.35)'); edge.addColorStop(1, 'rgba(120,160,210,0)');
   ctx.fillStyle = edge; ctx.fillRect(0, 0, 50, H);
@@ -462,10 +619,10 @@ function shadow(x, y, rx, ry) {
 
 function dangerMark(o) {
   // Подсказка: красное кольцо у того, что нельзя снести
-  if (S.mode === 'menu' || o.deco) return;
-  const big = ball.shield <= 0 && ball.r < o.size * 0.92;
+  if (S.mode === 'menu' || S.mode === 'shop' || o.deco) return;
+  const big = ball.shield <= 0 && ball.r < o.size * SMASH_K;
   ctx.strokeStyle = big ? 'rgba(230,60,60,0.55)' : 'rgba(60,200,110,0.45)';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3 / S.z;
   ctx.beginPath(); ctx.ellipse(o.x, o.y + o.r * 0.2, o.r * 1.3, o.r * 0.45, 0, 0, Math.PI * 2); ctx.stroke();
 }
 
@@ -594,7 +751,7 @@ function drawCoin(o) {
 
 function drawPower(o) {
   const tm = performance.now() / 1000, s = o.size;
-  const bob = Math.sin(tm * 4 + o.seed * 6) * 5;
+  const bob = Math.sin(tm * 4 + o.seed * 6) * 5 / S.z;
   const col = o.type === 'magnet' ? '#ff5a5a' : '#4fb3ff';
   ctx.fillStyle = col + '44';
   ctx.beginPath(); ctx.arc(o.x, o.y + bob, s * 1.5, 0, Math.PI * 2); ctx.fill();
@@ -659,29 +816,201 @@ function drawBallAt(c, x, y, r, rot, skinId, tilt = 0) {
   c.restore();
 }
 
+
+function drawCar(o) {
+  const s = o.size, x = o.x, y = o.y;
+  shadow(x + s * 0.1, y + s * 0.35, s * 1.0, s * 0.3);
+  dangerMark(o);
+  // Кузов
+  ctx.fillStyle = o.color;
+  roundRect(x - s * 0.95, y - s * 0.45, s * 1.9, s * 0.6, s * 0.15); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.55, y - s * 0.45); ctx.lineTo(x - s * 0.35, y - s * 0.85);
+  ctx.lineTo(x + s * 0.4, y - s * 0.85); ctx.lineTo(x + s * 0.6, y - s * 0.45); ctx.closePath(); ctx.fill();
+  // Окна
+  ctx.fillStyle = '#bfe3ff';
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.45, y - s * 0.48); ctx.lineTo(x - s * 0.3, y - s * 0.78);
+  ctx.lineTo(x - s * 0.02, y - s * 0.78); ctx.lineTo(x - s * 0.02, y - s * 0.48); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.06, y - s * 0.48); ctx.lineTo(x + s * 0.06, y - s * 0.78);
+  ctx.lineTo(x + s * 0.35, y - s * 0.78); ctx.lineTo(x + s * 0.5, y - s * 0.48); ctx.closePath(); ctx.fill();
+  // Снег на крыше
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(x + s * 0.02, y - s * 0.86, s * 0.42, s * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+  // Колёса и фары
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(x - s * 0.55, y + s * 0.15, s * 0.22, 0, 7); ctx.arc(x + s * 0.55, y + s * 0.15, s * 0.22, 0, 7); ctx.fill();
+  ctx.fillStyle = '#888';
+  ctx.beginPath(); ctx.arc(x - s * 0.55, y + s * 0.15, s * 0.09, 0, 7); ctx.arc(x + s * 0.55, y + s * 0.15, s * 0.09, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff6a0';
+  ctx.fillRect(x + s * 0.82, y - s * 0.35, s * 0.12, s * 0.12);
+}
+
+function drawHouse(o) {
+  const s = o.size, x = o.x, y = o.y;
+  shadow(x + s * 0.2, y + s * 0.2, s * 1.15, s * 0.35);
+  dangerMark(o);
+  const w = s * 1.6, h = s * 1.0;
+  // Стены
+  ctx.fillStyle = o.color;
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.fillRect(x + w * 0.1, y - h, w * 0.4, h);
+  // Крыша со снегом
+  ctx.fillStyle = '#5a3a2a';
+  ctx.beginPath(); ctx.moveTo(x - w * 0.62, y - h); ctx.lineTo(x, y - h - s * 0.75); ctx.lineTo(x + w * 0.62, y - h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.64, y - h + s * 0.02); ctx.lineTo(x, y - h - s * 0.78); ctx.lineTo(x + w * 0.64, y - h + s * 0.02);
+  ctx.lineTo(x + w * 0.5, y - h + s * 0.08); ctx.lineTo(x, y - h - s * 0.55); ctx.lineTo(x - w * 0.5, y - h + s * 0.08);
+  ctx.closePath(); ctx.fill();
+  // Труба
+  ctx.fillStyle = '#7a4a3a';
+  ctx.fillRect(x + w * 0.22, y - h - s * 0.6, s * 0.18, s * 0.35);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + w * 0.2, y - h - s * 0.64, s * 0.22, s * 0.07);
+  // Окна с тёплым светом и дверь
+  ctx.fillStyle = '#ffd56a';
+  ctx.fillRect(x - w * 0.38, y - h * 0.72, w * 0.2, h * 0.28);
+  ctx.fillRect(x + w * 0.18, y - h * 0.72, w * 0.2, h * 0.28);
+  ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = s * 0.03;
+  ctx.strokeRect(x - w * 0.38, y - h * 0.72, w * 0.2, h * 0.28);
+  ctx.strokeRect(x + w * 0.18, y - h * 0.72, w * 0.2, h * 0.28);
+  ctx.fillStyle = '#5a3a2a';
+  ctx.fillRect(x - w * 0.08, y - h * 0.5, w * 0.16, h * 0.5);
+  // Сугроб у стены
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(x, y, w * 0.6, s * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawTower(o) {
+  const s = o.size, x = o.x, y = o.y;
+  shadow(x + s * 0.3, y + s * 0.15, s * 0.9, s * 0.3);
+  dangerMark(o);
+  const w = s * 0.9, h = s * 2.2;
+  const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+  g.addColorStop(0, '#a3a9b7'); g.addColorStop(1, '#6f7686');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  // Кладка
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = s * 0.02;
+  for (let i = 1; i < 8; i++) {
+    const yy = y - h * i / 8;
+    ctx.beginPath(); ctx.moveTo(x - w / 2, yy); ctx.lineTo(x + w / 2, yy); ctx.stroke();
+  }
+  // Крыша
+  ctx.fillStyle = '#2a5a9a';
+  ctx.beginPath(); ctx.moveTo(x - w * 0.65, y - h); ctx.lineTo(x, y - h - s * 1.0); ctx.lineTo(x + w * 0.65, y - h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(x - w * 0.25, y - h - s * 0.6); ctx.lineTo(x, y - h - s * 1.0); ctx.lineTo(x + w * 0.25, y - h - s * 0.6); ctx.closePath(); ctx.fill();
+  // Флажок и окна
+  ctx.strokeStyle = '#333'; ctx.lineWidth = s * 0.03;
+  ctx.beginPath(); ctx.moveTo(x, y - h - s); ctx.lineTo(x, y - h - s * 1.35); ctx.stroke();
+  ctx.fillStyle = '#e8324a';
+  ctx.beginPath(); ctx.moveTo(x, y - h - s * 1.35); ctx.lineTo(x + s * 0.3, y - h - s * 1.27); ctx.lineTo(x, y - h - s * 1.19); ctx.fill();
+  ctx.fillStyle = '#ffd56a';
+  ctx.fillRect(x - w * 0.12, y - h * 0.8, w * 0.24, h * 0.12);
+  ctx.fillRect(x - w * 0.12, y - h * 0.45, w * 0.24, h * 0.12);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function drawFinish(o) {
+  const hw = halfW() + 20 / S.z, cell = 26 / S.z;
+  // Клетчатая лента поперёк трассы
+  for (let row = 0; row < 2; row++) {
+    for (let i = 0, x = -hw; x < hw; i++, x += cell) {
+      ctx.fillStyle = (i + row) % 2 ? '#1d2a44' : '#ffffff';
+      ctx.fillRect(x, o.y + row * cell - cell, cell, cell);
+    }
+  }
+  // Столбы и растяжка
+  const px = halfW() - 30 / S.z, ph = 200 / S.z;
+  ctx.fillStyle = '#e8324a';
+  ctx.fillRect(-px - 6 / S.z, o.y - ph, 12 / S.z, ph);
+  ctx.fillRect(px - 6 / S.z, o.y - ph, 12 / S.z, ph);
+  ctx.fillStyle = '#e8324a';
+  roundRect(-px, o.y - ph, px * 2, 50 / S.z, 10 / S.z); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${34 / S.z}px 'Trebuchet MS', Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(t('finish'), 0, o.y - ph + 25 / S.z);
+}
+
+function drawCastle(o) {
+  const s = o.size, hw = halfW() + 20 / S.z;
+  const can = ball.r >= s * SMASH_K || ball.shield > 0;
+  const wallH = s * 1.2;
+  shadow(0, o.y + s * 0.1, hw, s * 0.2);
+  // Стена
+  const g = ctx.createLinearGradient(0, o.y - wallH, 0, o.y);
+  g.addColorStop(0, '#e6f7ff'); g.addColorStop(1, '#8fc8ec');
+  ctx.fillStyle = g;
+  ctx.fillRect(-hw, o.y - wallH, hw * 2, wallH);
+  // Зубцы
+  const tooth = s * 0.3;
+  for (let x = -hw; x < hw; x += tooth * 2) ctx.fillRect(x, o.y - wallH - tooth * 0.7, tooth, tooth * 0.7);
+  // Ледяные блоки
+  ctx.strokeStyle = 'rgba(80,140,200,0.35)'; ctx.lineWidth = s * 0.02;
+  for (let r = 1; r < 4; r++) {
+    const yy = o.y - wallH * r / 4;
+    ctx.beginPath(); ctx.moveTo(-hw, yy); ctx.lineTo(hw, yy); ctx.stroke();
+  }
+  // Башни
+  for (const tx of [-hw * 0.55, hw * 0.55]) {
+    ctx.fillStyle = '#cdeeff';
+    ctx.fillRect(tx - s * 0.35, o.y - wallH * 1.6, s * 0.7, wallH * 1.6);
+    ctx.fillStyle = '#5fb4e8';
+    ctx.beginPath(); ctx.moveTo(tx - s * 0.45, o.y - wallH * 1.6); ctx.lineTo(tx, o.y - wallH * 1.6 - s * 0.8); ctx.lineTo(tx + s * 0.45, o.y - wallH * 1.6); ctx.closePath(); ctx.fill();
+  }
+  // Ворота
+  ctx.fillStyle = '#3a6f9a';
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.4, o.y); ctx.lineTo(-s * 0.4, o.y - wallH * 0.55);
+  ctx.arc(0, o.y - wallH * 0.55, s * 0.4, Math.PI, 0); ctx.lineTo(s * 0.4, o.y); ctx.closePath(); ctx.fill();
+  // Подпись с требуемым размером
+  ctx.font = `bold ${30 / S.z}px 'Trebuchet MS', Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const label = t('need', { s: meters(s * SMASH_K) });
+  ctx.lineWidth = 6 / S.z; ctx.strokeStyle = 'rgba(13,35,64,0.85)';
+  ctx.strokeText(label, 0, o.y - wallH * 1.6 - s * 1.0);
+  ctx.fillStyle = can ? '#5fe07a' : '#ff6b6b';
+  ctx.fillText(label, 0, o.y - wallH * 1.6 - s * 1.0);
+}
+
 function drawBall() {
-  const r = ball.r;
-  shadow(ball.x + r * 0.2, ball.y + r * 0.85, r * 0.9, r * 0.28);
+  const r = ball.r, z = S.z;
+  shadow(ball.x + r * 0.2, r * 0.85, r * 0.9, r * 0.28);
   if (ball.inv > 0 && Math.floor(ball.inv * 12) % 2 === 0 && ball.shield <= 0) ctx.globalAlpha = 0.5;
-  drawBallAt(ctx, ball.x, ball.y, r, ball.rot, save.skin, ball.tilt || 0);
+  drawBallAt(ctx, ball.x, 0, r, ball.rot, save.skin, ball.tilt || 0);
   ctx.globalAlpha = 1;
   if (ball.shield > 0) {
     const a = ball.shield < 1.5 ? (Math.sin(performance.now() / 60) + 1) / 2 : 1;
-    ctx.strokeStyle = `rgba(90,190,255,${0.8 * a})`; ctx.lineWidth = 5;
+    ctx.strokeStyle = `rgba(90,190,255,${0.8 * a})`; ctx.lineWidth = 5 / z;
     ctx.fillStyle = `rgba(150,220,255,${0.2 * a})`;
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, r + 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ball.x, 0, r + 10 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   if (ball.magnet > 0) {
     const tm = performance.now() / 1000;
-    ctx.strokeStyle = 'rgba(255,90,90,0.35)'; ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,90,90,0.35)'; ctx.lineWidth = 2 / z;
     for (let i = 0; i < 2; i++) {
-      const rr = r + 20 + ((tm * 60 + i * 30) % 60);
-      ctx.beginPath(); ctx.arc(ball.x, ball.y, rr, 0, Math.PI * 2); ctx.stroke();
+      const rr = r + (20 + ((tm * 60 + i * 30) % 60)) / z;
+      ctx.beginPath(); ctx.arc(ball.x, 0, rr, 0, Math.PI * 2); ctx.stroke();
     }
   }
 }
 
-const DRAW = { tree: drawTree, rock: drawRock, snowman: drawSnowman, fire: drawFire, snow: drawSnowPile, coin: drawCoin, magnet: drawPower, shield: drawPower };
+const DRAW = {
+  tree: drawTree, rock: drawRock, snowman: drawSnowman, fire: drawFire, snow: drawSnowPile, coin: drawCoin,
+  magnet: drawPower, shield: drawPower, car: drawCar, house: drawHouse, tower: drawTower,
+  finish: drawFinish, castle: drawCastle,
+};
+const FLAT = { fire: 1, snow: 1, coin: 1, finish: 1 };
 
 function render() {
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
@@ -690,16 +1019,19 @@ function render() {
   ctx.save();
   ctx.translate(OX, 0);
   drawBackground();
-  drawTrail();
 
-  // Плоские объекты — под всем остальным
-  for (const o of objs) if (o.type === 'fire' || o.type === 'snow' || o.type === 'coin') DRAW[o.type](o);
-  // Высокие объекты и ком сортируем по глубине
-  const list = objs.filter(o => !(o.type === 'fire' || o.type === 'snow' || o.type === 'coin'));
-  const showBall = S.mode !== 'menu' && S.mode !== 'shop' && !(S.mode === 'over' || S.mode === 'revive');
-  if (showBall) list.push({ type: 'ball', y: ball.y });
+  // Мировой слой с камерой
+  ctx.save();
+  ctx.translate(W / 2, BALL_SY);
+  ctx.scale(S.z, S.z);
+  drawTrail();
+  for (const o of objs) if (FLAT[o.type]) DRAW[o.type](o);
+  const list = objs.filter(o => !FLAT[o.type]);
+  const showBall = S.mode === 'play' || S.mode === 'pause';
+  if (showBall) list.push({ type: 'ball', y: 0 });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) o.type === 'ball' ? drawBall() : DRAW[o.type](o);
+  ctx.restore();
 
   for (const p of parts) {
     ctx.globalAlpha = clamp(p.life, 0, 1);
@@ -707,7 +1039,6 @@ function render() {
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalAlpha = 1;
-
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const tx of texts) {
     ctx.globalAlpha = clamp(tx.life * 1.5, 0, 1);
@@ -719,16 +1050,13 @@ function render() {
   ctx.globalAlpha = 1;
   ctx.restore();
 
-  // Падающий снег (экранный слой)
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   for (const f of flakes) {
     ctx.beginPath(); ctx.arc(f.x * FW, f.y * H, f.s, 0, Math.PI * 2); ctx.fill();
   }
-  // Голубоватая виньетка
   const v = ctx.createRadialGradient(FW / 2, H / 2, Math.min(FW, H) * 0.4, FW / 2, H / 2, Math.max(FW, H) * 0.75);
   v.addColorStop(0, 'rgba(30,70,140,0)'); v.addColorStop(1, 'rgba(30,70,140,0.25)');
   ctx.fillStyle = v; ctx.fillRect(-20, -20, FW + 40, H + 40);
-
   if (S.flash > 0) { ctx.fillStyle = `rgba(255,80,80,${S.flash * 0.6})`; ctx.fillRect(-20, -20, FW + 40, H + 40); }
 }
 
@@ -746,20 +1074,18 @@ function updateFlakes(dt) {
 // Фон меню: медленный спуск декоративных объектов
 function menuUpdate(dt) {
   const dy = 120 * dt;
+  S.z = 1;
   for (const o of objs) o.y -= dy;
   scrollDecor(dy);
-  objs = objs.filter(o => o.y > -200);
+  objs = objs.filter(o => o.y > -BALL_SY - 200);
   S.nextSpawn -= dy;
   if (S.nextSpawn <= 0) {
     const r = Math.random();
-    const type = r < 0.5 ? 'tree' : r < 0.7 ? 'rock' : r < 0.85 ? 'snowman' : 'snow';
-    add(type, rand(30, W - 30), H + 100, type === 'snow' ? 18 : rand(25, 55));
+    const type = r < 0.4 ? 'tree' : r < 0.55 ? 'rock' : r < 0.7 ? 'snowman' : r < 0.85 ? 'house' : 'car';
+    add(type, rand(-W / 2 + 30, W / 2 - 30), H - BALL_SY + 100, rand(25, 55));
     S.nextSpawn = rand(80, 160);
   }
-  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += p.g * dt; p.life -= dt * 1.4; }
-  parts = parts.filter(p => p.life > 0);
-  for (const tx of texts) { tx.y -= 60 * dt; tx.life -= dt * 0.9; }
-  texts = texts.filter(tx => tx.life > 0);
+  updateParts(dt, 0);
 }
 
 // ---------- Главный цикл ----------
@@ -768,7 +1094,8 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (S.mode === 'play') update(dt);
-  else if (S.mode !== 'pause') menuUpdate(dt);
+  else if (S.mode === 'menu' || S.mode === 'shop') menuUpdate(dt);
+  else if (S.mode !== 'pause') updateParts(dt, 0);
   updateFlakes(dt);
   render();
   requestAnimationFrame(loop);
@@ -779,6 +1106,9 @@ function refreshMenu() {
   $('menuBest').textContent = save.best;
   $('menuCoins').textContent = '● ' + save.coins;
   $('shopCoins').textContent = '● ' + save.coins;
+  $('playBtn').textContent = t('play') + ' · ' + t('levelN', { n: save.level });
+  const total = Object.values(save.stars).reduce((a, b) => a + b, 0);
+  $('menuStars').textContent = total;
   $('sndBtn').classList.toggle('off', !save.sound);
   $('musBtn').classList.toggle('off', !save.music);
 }
@@ -845,7 +1175,7 @@ function bind(id, fn) {
 }
 
 let starting = false;
-async function playWithAd() {
+async function playWithAd(run, level) {
   if (starting) return;
   starting = true;
   Sfx.click();
@@ -853,12 +1183,27 @@ async function playWithAd() {
   if (save.games > 0) await YSDK.showFullscreen();
   starting = false;
   last = performance.now();
-  startRun();
+  startRun(run, level);
+}
+
+async function doubleReward(btn, onDone) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const ok = await YSDK.showRewarded();
+  if (ok) {
+    save.coins += S.reward; persist();
+    Sfx.buy();
+    btn.style.display = 'none';
+    onDone(S.reward * 2);
+  } else { toast(t('adFail')); btn.disabled = false; }
 }
 
 function setupUI() {
-  bind('playBtn', playWithAd);
-  bind('againBtn', playWithAd);
+  bind('playBtn', () => playWithAd('level', save.level));
+  bind('endlessBtn', () => playWithAd('endless'));
+  bind('againBtn', () => playWithAd(S.run, S.cfg.n));
+  bind('winNext', () => playWithAd('level', save.level));
+  bind('winMenu', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
   bind('shopBtn', () => { Sfx.click(); renderShop(); refreshMenu(); setMode('shop'); });
   bind('shopBack', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
   bind('tabSkins', () => { shopTab = 'skins'; Sfx.click(); renderShop(); });
@@ -869,18 +1214,8 @@ function setupUI() {
   bind('overMenuBtn', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
   bind('reviveBtn', doRevive);
   bind('reviveSkip', () => { Sfx.click(); finishRun(); });
-  bind('doubleBtn', async () => {
-    const b = $('doubleBtn');
-    if (b.disabled) return;
-    b.disabled = true;
-    const ok = await YSDK.showRewarded();
-    if (ok) {
-      save.coins += S.coins; persist();
-      $('overCoins').textContent = S.coins * 2;
-      Sfx.buy();
-      b.style.display = 'none';
-    } else { toast(t('adFail')); b.disabled = false; }
-  });
+  bind('doubleBtn', () => doubleReward($('doubleBtn'), v => { $('overCoins').textContent = v; }));
+  bind('winDouble', () => doubleReward($('winDouble'), v => { $('winCoins').textContent = v; }));
   bind('freeCoinsBtn', async () => {
     const b = $('freeCoinsBtn');
     if (b.disabled) return;
@@ -912,15 +1247,16 @@ async function boot() {
   setLang(YSDK.lang());
   const loaded = await YSDK.load();
   if (loaded) {
-    save = { ...save, ...loaded, up: { ...save.up, ...(loaded.up || {}) } };
+    save = { ...save, ...loaded, up: { ...save.up, ...(loaded.up || {}) }, stars: { ...(loaded.stars || {}) } };
     if (!Array.isArray(save.owned) || !save.owned.includes('classic')) save.owned = ['classic', ...(save.owned || [])];
+    if (!(save.level >= 1)) save.level = 1;
   }
   Sfx.soundOn = save.sound; Sfx.musicOn = save.music;
   applyTexts();
   setupUI();
   refreshMenu();
   bumps = Array.from({ length: 26 }, () => ({ x: rand(0, W), y: rand(0, H + 200), s: rand(10, 30) }));
-  for (let i = 0; i < 8; i++) add(i % 3 ? 'tree' : 'rock', rand(30, W - 30), rand(0, H), rand(25, 55));
+  for (let i = 0; i < 8; i++) add(i % 3 ? 'tree' : 'rock', rand(-W / 2 + 30, W / 2 - 30), rand(-BALL_SY, H - BALL_SY), rand(25, 55));
   setMode('menu');
   checkDaily();
   $('loading').style.display = 'none';
@@ -930,6 +1266,10 @@ async function boot() {
 
 boot();
 
-// Для отладки в консоли
-window.__game = { S, ball, get save() { return save; }, startRun };
+// Для отладки и автотестов
+window.__game = {
+  S, ball, update, startRun, levelCfg,
+  get objs() { return objs; },
+  get save() { return save; },
+};
 })();

@@ -88,6 +88,7 @@ const Sfx = {
   sizzle() { this.noise(0.15, 0.25, 4000); },
   power() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.15, 'triangle', 0.35, 0, i * 0.07)); },
   over() { [392, 330, 262, 196].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.4, 0, i * 0.15)); },
+  win() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.25, 'triangle', 0.35, 0, i * 0.1)); },
   click() { this.tone(700, 0.06, 'sine', 0.3); },
   buy() { [659, 880, 1175].forEach((f, i) => this.tone(f, 0.12, 'square', 0.12, 0, i * 0.06)); },
 
