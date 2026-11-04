@@ -46,7 +46,12 @@ const Sfx = {
   },
 
   setAdMute(v) { this.adMuted = v; this.applyVolume(); },
-  setHidden(v) { this.hidden = v; this.applyVolume(); },
+  setHidden(v) {
+    this.hidden = v;
+    this.applyVolume();
+    // Свёрнуто — полностью останавливаем аудиодвижок (тишина и экономия батареи)
+    if (this.ctx) { try { v ? this.ctx.suspend() : this.ctx.resume(); } catch (e) {} }
+  },
 
   tone(freq, dur, type = 'sine', vol = 1, slide = 0, delay = 0, dest) {
     if (!this.ctx) return;

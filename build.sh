@@ -1,11 +1,30 @@
 #!/usr/bin/env bash
-# Собирает архив для загрузки в консоль Яндекс Игр (index.html в корне архива).
+# Собирает архивы для загрузки (index.html в корне архива):
+#   dist/snowball-yandex.zip — Яндекс Игры (без VK Bridge)
+#   dist/snowball-vk.zip     — VK Игры (без SDK Яндекса)
 set -e
 cd "$(dirname "$0")"
 rm -rf dist && mkdir -p dist
-if command -v zip >/dev/null; then
-  zip -r -9 dist/snowball-yandex.zip index.html js >/dev/null
-else
-  python3 -c "import zipfile,os;z=zipfile.ZipFile('dist/snowball-yandex.zip','w',zipfile.ZIP_DEFLATED);z.write('index.html');[z.write(os.path.join('js',f)) for f in sorted(os.listdir('js'))];z.close()"
-fi
-echo "Готово: dist/snowball-yandex.zip ($(du -h dist/snowball-yandex.zip | cut -f1))"
+
+build() {
+  local name="$1" drop="$2"
+  local dir="dist/$name"
+  mkdir -p "$dir/js"
+  # Убираем блок другой платформы, помеченный <!-- drop:start --> … <!-- drop:end -->
+  sed -e "/<!-- $drop:start -->/,/<!-- $drop:end -->/d" -e '/<!-- [a-z]*:\(start\|end\) -->/d' index.html > "$dir/index.html"
+  cp js/*.js "$dir/js/"
+  if [ "$name" = yandex ]; then rm "$dir/js/vk-bridge.min.js"; else cp js/vk-bridge.LICENSE "$dir/js/"; fi
+  (
+    cd "$dir"
+    if command -v zip >/dev/null; then
+      zip -r -9 "../snowball-$name.zip" index.html js >/dev/null
+    else
+      python3 -c "import zipfile,os;z=zipfile.ZipFile('../snowball-$name.zip','w',zipfile.ZIP_DEFLATED);z.write('index.html');[z.write(os.path.join('js',f)) for f in sorted(os.listdir('js'))];z.close()"
+    fi
+  )
+  rm -rf "$dir"
+  echo "Готово: dist/snowball-$name.zip ($(du -h "dist/snowball-$name.zip" | cut -f1))"
+}
+
+build yandex vk
+build vk yandex

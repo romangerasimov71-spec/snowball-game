@@ -167,8 +167,9 @@ function persist() { YSDK.save(save); }
 
 // ---------- Сообщения и частицы (в экранных координатах трассы) ----------
 let toastTimer;
-function toast(msg, ms = 2200) {
+function toast(msg, ms = 2200, low = false) {
   const el = $('toast');
+  el.classList.toggle('low', low);   // внизу экрана — чтобы не закрывать заголовок меню
   el.textContent = msg; el.style.display = 'block';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, ms);
@@ -318,6 +319,12 @@ function setMode(m) {
 
 function pauseGame() { if (S.mode === 'play') setMode('pause'); }
 function resumeGame() { if (S.mode === 'pause') { setMode('play'); last = performance.now(); } }
+
+// Свернули игру (VK: VKWebAppViewHide) — пауза и тишина; развернули — звук возвращается, пауза остаётся
+YSDK.onHide = hidden => {
+  Sfx.setHidden(hidden || document.hidden);
+  if (hidden) pauseGame();
+};
 
 YSDK.onPause = paused => {
   if (paused) { Sfx.setAdMute(true); pauseGame(); } else Sfx.setAdMute(false);
@@ -1575,7 +1582,10 @@ function refreshMenu() {
   $('menuBest').textContent = save.best;
   $('menuCoins').textContent = '● ' + save.coins;
   $('shopCoins').textContent = '● ' + save.coins;
-  $('playBtn').textContent = t('play') + ' · ' + t('levelN', { n: save.level });
+  $('playBtn').textContent = t('play');
+  const lvl = document.createElement('small');
+  lvl.textContent = t('levelN', { n: save.level });
+  $('playBtn').append(lvl);
   const total = Object.values(save.stars).reduce((a, b) => a + b, 0);
   $('menuStars').textContent = total;
   refreshToggles();
@@ -1762,7 +1772,7 @@ function checkDaily() {
     const n = first ? 100 : 50;
     save.coins += n;
     persist();
-    setTimeout(() => toast(t('daily', { n })), 400);
+    setTimeout(() => toast(t('daily', { n }), 2600, true), 400);
   }
 }
 
