@@ -110,6 +110,28 @@
   }
   .toggles button.off { opacity: .4; }
   .btn.toggle { min-width: 140px; padding: 12px 18px; }
+  .btn.half { min-width: 110px; flex: 1; }
+  #menu .row { width: min(260px, 100%); }
+  .btn.small { font-size: 13px !important; }
+  #levelList { width: min(520px, 100%); max-height: 64vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px; touch-action: pan-y; }
+  .zoneBox { border-radius: 18px; padding: 10px 12px 12px; background: var(--zsky); color: #1d2a44; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .zoneBox.night { color: #e6f2ff; }
+  .zoneHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 18px; }
+  .zoneHead span { font-weight: bold; color: #c98a12; }
+  .zoneBox.night .zoneHead span { color: #ffd34d; }
+  .lvRow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .lv { aspect-ratio: 1; border: 0; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        background: linear-gradient(#4fb3ff, #2a7fd4); color: #fff; box-shadow: 0 4px 0 #1b5a9a; font: inherit; padding: 0; }
+  .lv .num { font-size: 22px; font-weight: bold; line-height: 1; }
+  .lv .st { font-size: 11px; color: #ffd34d; letter-spacing: -1px; min-height: 12px; }
+  .lv.bossLv { background: linear-gradient(#b07fff, #6b3fd4); box-shadow: 0 4px 0 #4a2a9a; }
+  .lv.cur { outline: 3px solid #ffd34d; outline-offset: 2px; }
+  .lv.locked { background: rgba(30,40,70,.35); box-shadow: none; cursor: default; }
+  .lv.locked .num { font-size: 18px; }
+  .lv:active:not(.locked) { transform: translateY(3px); box-shadow: 0 1px 0 #1b5a9a; }
+  .newSkin { display: flex; align-items: center; gap: 12px; background: rgba(255,211,77,.15); border: 2px solid #ffd34d; border-radius: 16px; padding: 8px 16px 8px 8px; text-align: left; }
+  .newSkin[hidden] { display: none; }
+  .newSkin canvas { width: 56px; height: 56px; }
   .btn.toggle.off { opacity: .45; text-decoration: line-through; }
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
 
@@ -148,8 +170,11 @@
   <div class="sub" data-t="subtitle"></div>
   <div class="stat"><b id="menuStars">0</b> ★ &nbsp;·&nbsp; <span data-t="best"></span>: <b id="menuBest">0</b></div>
   <button class="btn green big" id="playBtn" data-t="play"></button>
+  <div class="row">
+    <button class="btn half" id="levelsBtn" data-t="levels"></button>
+    <button class="btn half" id="shopBtn" data-t="shop"></button>
+  </div>
   <button class="btn" id="endlessBtn" data-t="endless"></button>
-  <button class="btn" id="shopBtn" data-t="shop"></button>
   <div class="toggles">
     <button id="sndBtn" aria-label="sound">🔊</button>
     <button id="musBtn" aria-label="music">🎵</button>
@@ -168,6 +193,13 @@
     <button class="btn gold ad" id="freeCoinsBtn"></button>
     <button class="btn ghost" id="shopBack" data-t="back"></button>
   </div>
+</div>
+
+<div class="screen" id="levels">
+  <div class="pill topcoins" id="levelsStars"></div>
+  <h2 data-t="levels"></h2>
+  <div id="levelList"></div>
+  <button class="btn ghost" id="levelsBack" data-t="back"></button>
 </div>
 
 <div class="screen" id="pause">
@@ -203,6 +235,7 @@
   <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
   <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
   <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
+  <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
   <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
   <button class="btn green big" id="winNext"></button>
   <button class="btn ghost" id="winMenu" data-t="menu"></button>
