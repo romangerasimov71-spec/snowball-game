@@ -419,6 +419,14 @@ function levelComplete(bossWin) {
   }
   S.nextLevel = Math.min(c.n + 1, save.level);
   $('winNext').textContent = t('levelN', { n: S.nextLevel });
+  // Не все звёзды — предлагаем перепройти и подсказываем, какого размера не хватило
+  $('winRetry').hidden = stars >= 3;
+  $('winHint').hidden = stars >= 3;
+  if (stars < 3) {
+    $('winRetry').textContent = t('retry3');
+    $('winHint').textContent = t('needForStars', { n: '★'.repeat(stars + 1), s: meters(stars === 1 ? c.r2 : c.r3) });
+  }
+  S.retryLevel = c.n;
   $('winSkin').hidden = !newSkin;
   if (newSkin) {
     $('winSkinName').textContent = t('sk_' + newSkin.id);
@@ -1593,7 +1601,8 @@ function renderLevels() {
   const list = $('levelList');
   list.innerHTML = '';
   $('levelsStars').textContent = Object.values(save.stars).reduce((a, b) => a + b, 0) + ' ★';
-  const groups = Math.floor((save.level - 1) / 5) + 2; // открытые локации + следующая (закрытая)
+  // Всегда видны все 5 локаций текущего круга (закрытые — с замками), чтобы было видно, что впереди
+  const groups = Math.max(ZONES.length, Math.ceil(save.level / 5 / ZONES.length) * ZONES.length);
   let current = null;
   for (let g = 0; g < groups; g++) {
     const zn = ZONES[g % ZONES.length], round = Math.floor(g / ZONES.length);
@@ -1713,6 +1722,7 @@ function setupUI() {
   bind('endlessBtn', () => playWithAd('endless'));
   bind('againBtn', () => playWithAd(S.run, S.cfg.n));
   bind('winNext', () => playWithAd('level', S.nextLevel));
+  bind('winRetry', () => playWithAd('level', S.retryLevel));
   bind('levelsBtn', () => { Sfx.click(); renderLevels(); setMode('levels'); });
   bind('levelsBack', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
   bind('winMenu', () => { Sfx.click(); refreshMenu(); setMode('menu'); });

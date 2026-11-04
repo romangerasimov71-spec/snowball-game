@@ -130,7 +130,8 @@
   .lv.locked .num { font-size: 18px; }
   .lv:active:not(.locked) { transform: translateY(3px); box-shadow: 0 1px 0 #1b5a9a; }
   .newSkin { display: flex; align-items: center; gap: 12px; background: rgba(255,211,77,.15); border: 2px solid #ffd34d; border-radius: 16px; padding: 8px 16px 8px 8px; text-align: left; }
-  .newSkin[hidden] { display: none; }
+  .newSkin[hidden], .btn[hidden], .stat[hidden] { display: none; }
+  .stat.hint { font-size: 16px; color: #cfe6ff; }
   .newSkin canvas { width: 56px; height: 56px; }
   .btn.toggle.off { opacity: .45; text-decoration: line-through; }
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
@@ -237,7 +238,9 @@
   <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
   <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
   <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
+  <div class="stat hint" id="winHint" hidden></div>
   <button class="btn green big" id="winNext"></button>
+  <button class="btn" id="winRetry" hidden></button>
   <button class="btn ghost" id="winMenu" data-t="menu"></button>
 </div>
 
