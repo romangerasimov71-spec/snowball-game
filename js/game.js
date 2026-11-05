@@ -158,6 +158,10 @@ window.addEventListener('pointerup', () => { pointerDown = false; });
 window.addEventListener('pointercancel', () => { pointerDown = false; });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
+// Запасной вариант для клиентов без VKWebAppViewHide и для выгрузки страницы в фон (bfcache)
+window.addEventListener('pagehide', () => { Sfx.setHidden(true); if (S.mode === 'play') pauseGame(); });
+window.addEventListener('pageshow', () => Sfx.setHidden(document.hidden));
+
 document.addEventListener('visibilitychange', () => {
   Sfx.setHidden(document.hidden);
   if (document.hidden && S.mode === 'play') pauseGame();
@@ -337,7 +341,7 @@ function die(reason) {
   S.shake = 18;
   burst(ball.x, ball.y, 40, '#fff', 420, [3, 9]);
   const progressed = S.run === 'level' ? S.dist > S.cfg.len * 0.25 : S.score > 150;
-  if (!S.revived && reason !== 'boss' && progressed) showRevive();
+  if (!S.revived && reason !== 'boss' && progressed && YSDK.rewardedSupported()) showRevive();
   else finishRun();
 }
 
@@ -390,7 +394,7 @@ function finishRun() {
   $('overBest').textContent = save.best;
   $('overSize').textContent = meters(S.maxR);
   $('overCoins').textContent = S.coins;
-  $('doubleBtn').style.display = S.coins >= 5 ? '' : 'none';
+  $('doubleBtn').style.display = S.coins >= 5 && YSDK.rewardedSupported() ? '' : 'none';
   $('doubleBtn').disabled = false;
   S.reward = S.coins;
   setMode('over');
@@ -441,7 +445,7 @@ function levelComplete(bossWin) {
     const c2 = cv.getContext('2d'); c2.clearRect(0, 0, cv.width, cv.height);
     drawBallAt(c2, cv.width / 2, cv.height / 2, cv.width * 0.42, 1.2, newSkin.id);
   }
-  $('winDouble').style.display = '';
+  $('winDouble').style.display = YSDK.rewardedSupported() ? '' : 'none';
   $('winDouble').disabled = false;
   setMode('win');
 }
@@ -1605,6 +1609,7 @@ function applyTexts() {
   document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
   document.title = t('title');
   $('freeCoinsBtn').textContent = t('freeCoins', { n: 50 });
+  $('freeCoinsBtn').style.display = YSDK.rewardedSupported() ? '' : 'none';
 }
 
 // Карта уровней: группы по локациям, звёзды, замки на непройденных

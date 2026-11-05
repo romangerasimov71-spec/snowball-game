@@ -6,9 +6,19 @@
 <title>Снежный Ком</title>
 <script src="js/vk-bridge.min.js"></script>
 <script>
-  // VK Игры передают в адрес параметры запуска vk_*. Инициализируем мост сразу при старте.
-  window.IS_VK = /[?&#]vk_(app_id|platform|user_id|language)=/.test(location.search + location.hash);
-  if (window.IS_VK && window.vkBridge) vkBridge.send('VKWebAppInit').catch(function () {});
+  // Площадка определяется по параметрам запуска в адресе. Мост инициализируем сразу при старте.
+  //  OK: VK Mini Apps в Одноклассниках получают vk_client=ok; дополнительно узнаём OK
+  //      по его собственным параметрам запуска (logged_user_id / application_key + api_server и т.п.).
+  //  VK: параметры vk_* без vk_client=ok.
+  (function () {
+    var q = location.search + location.hash;
+    var has = function (name) { return new RegExp('[?&#]' + name + '=').test(q); };
+    window.IS_OK = /[?&#]vk_client=ok(&|#|$)/.test(q) ||
+      ((has('logged_user_id') || has('application_key')) &&
+       (has('api_server') || has('apiconnection') || has('session_key') || has('auth_sig') || has('web_server')));
+    window.IS_VK = !window.IS_OK && /[?&#]vk_(app_id|platform|user_id|language)=/.test(q);
+    if ((window.IS_VK || window.IS_OK) && window.vkBridge) vkBridge.send('VKWebAppInit').catch(function () {});
+  })();
 </script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
