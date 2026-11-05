@@ -13,7 +13,7 @@
   (function () {
     var q = location.search + location.hash;
     var has = function (name) { return new RegExp('[?&#]' + name + '=').test(q); };
-    window.IS_OK = /[?&#]vk_client=ok(&|#|$)/.test(q) ||
+    window.IS_OK = /[?&#]vk_client=ok(&|#|$)/.test(q) || /[?&#]vk_platform=[a-z_]+_ok(&|#|$)/.test(q) ||
       ((has('logged_user_id') || has('application_key')) &&
        (has('api_server') || has('apiconnection') || has('session_key') || has('auth_sig') || has('web_server')));
     window.IS_VK = !window.IS_OK && /[?&#]vk_(app_id|platform|user_id|language)=/.test(q);
@@ -158,7 +158,20 @@
   .lv.locked .num { font-size: 18px; }
   .lv:active:not(.locked) { transform: translateY(3px); box-shadow: 0 1px 0 #1b5a9a; }
   .newSkin { display: flex; align-items: center; gap: 12px; background: rgba(255,211,77,.15); border: 2px solid #ffd34d; border-radius: 16px; padding: 8px 16px 8px 8px; text-align: left; }
-  .newSkin[hidden], .btn[hidden], .stat[hidden] { display: none; }
+  .newSkin[hidden], .btn[hidden], .stat[hidden], .row[hidden] { display: none; }
+  /* Социальные кнопки и награды */
+  .btn.social { background: linear-gradient(#7d6bff, #5a45d6); box-shadow: 0 6px 0 #3d2c9e, 0 10px 20px rgba(0,0,0,.3); font-size: 18px; }
+  .badge { font-style: normal; font-size: .8em; background: #ffd34d; color: #5a3300; border-radius: 10px; padding: 1px 7px; margin-left: 4px; }
+  .badge:empty { display: none; }
+  #dailyDays { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: min(380px, 100%); }
+  .day { background: rgba(255,255,255,.12); border-radius: 14px; padding: 8px 4px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; align-items: center; border: 2px solid transparent; }
+  .day b { font-size: 17px; color: #ffd34d; white-space: nowrap; }
+  .btn.social.half { font-size: 16px; padding: 10px 8px; white-space: nowrap; }
+  .btn.social.half .badge { display: block; width: fit-content; margin: 3px auto 0; }
+  .day.done { opacity: .45; }
+  .day.today { border-color: #ffd34d; background: rgba(255,211,77,.18); }
+  .day.big { grid-column: span 2; }
+  #shareImg { height: min(42vh, 360px); aspect-ratio: 9 / 16; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.4); max-width: 100%; object-fit: cover; }
   .stat.hint { font-size: 16px; color: #cfe6ff; }
   .newSkin canvas { width: 56px; height: 56px; }
   .btn.toggle.off { opacity: .45; text-decoration: line-through; }
@@ -205,6 +218,7 @@
     <button class="btn half" id="shopBtn" data-t="shop"></button>
   </div>
   <button class="btn" id="endlessBtn" data-t="endless"></button>
+  <button class="btn social" id="inviteBtn" hidden><span data-t="invite"></span> <em class="badge" id="inviteBadge"></em></button>
   <div class="toggles">
     <button id="sndBtn" aria-label="sound">🔊</button>
     <button id="musBtn" aria-label="music">🎵</button>
@@ -257,6 +271,7 @@
   <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> <b>●</b></div>
   <button class="btn gold ad" id="doubleBtn" data-t="doubleCoins"></button>
   <button class="btn green big" id="againBtn" data-t="again"></button>
+  <button class="btn social" id="overShare" hidden><span data-t="share"></span> <em class="badge shareBadge"></em></button>
   <button class="btn ghost" id="overMenuBtn" data-t="menu"></button>
 </div>
 
@@ -270,7 +285,29 @@
   <div class="stat hint" id="winHint" hidden></div>
   <button class="btn green big" id="winNext"></button>
   <button class="btn" id="winRetry" hidden></button>
+  <button class="btn gold" id="winFav" hidden></button>
+  <div class="row" id="winSocial" hidden>
+    <button class="btn social half" id="winInvite"><span data-t="inviteShort"></span> <em class="badge inviteBadge2"></em></button>
+    <button class="btn social half" id="winShare"><span data-t="share"></span> <em class="badge shareBadge"></em></button>
+  </div>
   <button class="btn ghost" id="winMenu" data-t="menu"></button>
+</div>
+
+<div class="screen" id="daily">
+  <h2 data-t="dailyTitle"></h2>
+  <div class="sub" data-t="streakHint"></div>
+  <div id="dailyDays"></div>
+  <button class="btn green big" id="dailyClaim"></button>
+  <button class="btn gold ad" id="dailyX2" data-t="claimX2"></button>
+</div>
+
+<div class="screen" id="share">
+  <h2 data-t="shareTitle"></h2>
+  <img id="shareImg" alt="">
+  <div class="sub" id="shareHint"></div>
+  <button class="btn" id="shareWall"></button>
+  <button class="btn" id="shareStory" data-t="shareStory"></button>
+  <button class="btn ghost" id="shareClose" data-t="close"></button>
 </div>
 
 <div id="toast"></div>
