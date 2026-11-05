@@ -1,4 +1,13 @@
-// Звуковые эффекты — файлы Kenney (CC0) из assets/sfx; фоновая музыка пока синтезируется через WebAudio.
+// Звук игры: эффекты (Kenney, CC0) из assets/sfx и фоновая музыка (3xBlast, CC0) из assets/music.
+// Всё звучит через WebAudio: эффекты → sfxGain, музыка → musicGain, оба → master.
+//  • кнопка «Звук» выключает всё, кнопка «Музыка» — только музыку;
+//  • реклама и платформа приглушают master; при сворачивании аудиодвижок останавливается
+//    (музыка замирает и потом продолжает с того же места).
+const SFX_VOLUME = 1.0;
+const MUSIC_VOLUME = 0.12;          // музыка заметно тише эффектов
+const MUSIC_FILE = 'assets/music/christmas-synths';
+const MUSIC_LOOP_SECONDS = 84;      // точная длина цикла трека — повтор без паузы на стыке
+
 const Sfx = {
   ctx: null,
   master: null,
@@ -8,9 +17,6 @@ const Sfx = {
   musicOn: true,
   adMuted: false,
   hidden: false,
-  musicTimer: null,
-  step: 0,
-  noiseBuf: null,
 
   init() {
     if (this.ctx) return;
@@ -20,30 +26,24 @@ const Sfx = {
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.5;
     this.sfxGain.connect(this.master);
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.25;
     this.musicGain.connect(this.master);
-    const len = this.ctx.sampleRate * 0.5;
-    this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const d = this.noiseBuf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.applyVolume();
     this.loadSfx();
     this.startMusic();
   },
 
   resume() {
-    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx && this.ctx.state === 'suspended' && !this.hidden) this.ctx.resume();
   },
 
   applyVolume() {
     if (!this.ctx) return;
     const muted = this.adMuted || this.hidden;
     this.master.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.02);
-    this.sfxGain.gain.value = this.soundOn ? 0.5 : 0;
-    this.musicGain.gain.value = this.musicOn ? 0.25 : 0;
+    this.sfxGain.gain.value = this.soundOn ? SFX_VOLUME : 0;
+    this.musicGain.gain.value = this.soundOn && this.musicOn ? MUSIC_VOLUME : 0;
   },
 
   setAdMute(v) { this.adMuted = v; this.applyVolume(); },
@@ -140,142 +140,46 @@ const Sfx = {
   click() { this.play('click', 0.7); },
   buy() { this.play('reward', 0.75); },
 
-  // Динамичный трек, 140 BPM, ля минор. 8 частей по 4 такта (~55 с) до повтора:
-  // A A2 B C A D B2 C2. У каждой части своя гармония и мелодия; в меню — без барабанов.
-  intensity: 0,
-  setIntensity(v) { this.intensity = v; },
-
-  startMusic() {
-    if (!this.ctx || this.musicTimer) return;
-    const c = this.ctx;
-    const BPM = 140, SIX = 60 / BPM / 4;
-    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
-
-    // Эхо для мелодии
-    this.echo = c.createDelay(1);
-    this.echo.delayTime.value = SIX * 3;
-    const fb = c.createGain(); fb.gain.value = 0.3;
-    const wet = c.createGain(); wet.gain.value = 0.35;
-    this.echo.connect(fb); fb.connect(this.echo); this.echo.connect(wet); wet.connect(this.musicGain);
-    const bassLP = c.createBiquadFilter(); bassLP.type = 'lowpass'; bassLP.frequency.value = 700; bassLP.connect(this.musicGain);
-    const arpLP = c.createBiquadFilter(); arpLP.type = 'lowpass'; arpLP.frequency.value = 2600; arpLP.connect(this.musicGain);
-
-    // Аккорды: корень (MIDI) и тип
-    const CH = { Am: [57, 'm'], F: [53, 'M'], C: [48, 'M'], G: [55, 'M'], Em: [52, 'm'], Dm: [50, 'm'], E: [52, 'M'] };
-    const tones = name => { const [r, q] = CH[name]; return q === 'm' ? [r, r + 3, r + 7] : [r, r + 4, r + 7]; };
-    const SECTIONS = {
-      A:  { prog: ['Am', 'F', 'C', 'G'], drums: 'full', lead: false, arp: true },
-      A2: { prog: ['Am', 'F', 'C', 'G'], drums: 'full', lead: 'A', arp: true },
-      B:  { prog: ['F', 'G', 'Em', 'Am'], drums: 'half', lead: 'B', arp: false, pad: true },
-      C:  { prog: ['Dm', 'G', 'C', 'E'], drums: 'build', lead: 'C', arp: true },
-      D:  { prog: ['C', 'G', 'Am', 'F'], drums: 'four', lead: 'D', arp: true, double: true },
-      B2: { prog: ['F', 'G', 'Em', 'Am'], drums: 'full', lead: 'B2', arp: true, pad: true },
-      C2: { prog: ['Dm', 'G', 'Am', 'E'], drums: 'build', lead: 'C2', arp: true },
-    };
-    const ORDER = ['A', 'A2', 'B', 'C', 'A', 'D', 'B2', 'C2'];
-
-    // Мелодии генерируются из пентатоники детерминированно (сид = имя части)
-    const PENTA = [69, 72, 74, 76, 79, 81, 84, 86, 88];
-    const RHYTHMS = [
-      [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0],
-      [1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0],
-      [1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-      [1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
-    ];
-    const melodies = {};
-    const melody = key => {
-      if (melodies[key]) return melodies[key];
-      let seed = 0; for (const ch of key) seed = seed * 31 + ch.charCodeAt(0);
-      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-      const out = [];
-      let idx = 2 + (rnd() * 3 | 0);
-      for (let bar = 0; bar < 4; bar++) {
-        const rh = RHYTHMS[(rnd() * RHYTHMS.length) | 0];
-        const notes = [];
-        for (let st = 0; st < 16; st++) {
-          if (!rh[st]) { notes.push(null); continue; }
-          idx = Math.max(0, Math.min(PENTA.length - 1, idx + ((rnd() * 5) | 0) - 2));
-          notes.push(PENTA[idx]);
-        }
-        out.push(notes);
+  // ---------- Фоновая музыка: файл, повтор через WebAudio ----------
+  // Скачиваем трек только после старта игры, чтобы он не задерживал загрузку.
+  prefetchMusic() {
+    if (this.musicRaw) return;
+    const exts = this.sfxExt() === 'ogg' ? ['ogg', 'mp3'] : ['mp3'];
+    this.musicRaw = (async () => {
+      for (const e of exts) {
+        try {
+          const res = await fetch(`${MUSIC_FILE}.${e}`);
+          if (res.ok) return await res.arrayBuffer();
+        } catch (err) { /* следующий формат */ }
       }
-      // Мотив = такт 1–2, повтор с изменённым концом — запоминается, но не надоедает
-      out[2] = out[0].slice();
-      return (melodies[key] = out);
-    };
+      return null;
+    })();
+    if (this.ctx) this.startMusic();
+  },
 
-    const osc = (type, f, t0, dur, vol, dest, slide) => {
-      const o = c.createOscillator(), g = c.createGain();
-      o.type = type; o.frequency.setValueAtTime(f, t0);
-      if (slide) o.frequency.exponentialRampToValueAtTime(slide, t0 + dur);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g); g.connect(dest); o.start(t0); o.stop(t0 + dur + 0.02);
-    };
-    const noise = (t0, dur, vol, type, freq) => {
-      const src = c.createBufferSource(); src.buffer = this.noiseBuf;
-      const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq;
-      const g = c.createGain();
-      g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      src.connect(f); f.connect(g); g.connect(this.musicGain);
-      src.start(t0, Math.random() * 0.3); src.stop(t0 + dur + 0.02);
-    };
-    const kick = t0 => osc('sine', 150, t0, 0.22, 0.55, this.musicGain, 42);
-    const snare = t0 => { noise(t0, 0.16, 0.5, 'bandpass', 1900); osc('triangle', 210, t0, 0.08, 0.25, this.musicGain); };
-    const hat = (t0, open) => noise(t0, open ? 0.18 : 0.035, open ? 0.16 : 0.12, 'highpass', 7500);
-
-    const step = (pos, t0) => {
-      const bar = Math.floor(pos / 16), st = pos % 16;
-      const secName = ORDER[Math.floor(bar / 4) % ORDER.length];
-      const sec = SECTIONS[secName], bIn = bar % 4;
-      const chord = tones(sec.prog[bIn]);
-      const full = this.intensity > 0;
-
-      // Барабаны (только в забеге)
-      if (full) {
-        const d = sec.drums;
-        if (d === 'four' ? st % 4 === 0 : d === 'half' ? st === 0 || st === 10 : st === 0 || st === 8 || (st === 14 && bIn % 2))
-          kick(t0);
-        if (d === 'half' ? st === 8 : st === 4 || st === 12) snare(t0);
-        if (d === 'build' && bIn === 3 && st >= 8) snare(t0); // разгон перед следующей частью
-        if (st % 2 === 0) hat(t0, d !== 'half' && st % 8 === 6);
-      }
-      // Бас: пульсирующие восьмые с октавным скачком
-      if (st % 2 === 0) {
-        const root = chord[0] - 24 + (st % 8 === 4 ? 12 : 0);
-        osc('sawtooth', mtof(root), t0, SIX * 1.7, full ? 0.22 : 0.12, bassLP);
-      }
-      // Арпеджио шестнадцатыми
-      if (sec.arp || !full) {
-        const seq = [0, 1, 2, 1, 2, 0, 1, 2];
-        const n = chord[seq[st % 8]] + 12 + (st >= 8 && bIn % 2 ? 12 : 0);
-        osc('square', mtof(n), t0, SIX * 0.9, full ? 0.035 : 0.03, arpLP);
-      }
-      // Пэд в куплетах
-      if (sec.pad && st === 0) for (const n of chord) osc('triangle', mtof(n), t0, SIX * 15, 0.05, this.musicGain);
-      // Мелодия
-      if (full && sec.lead) {
-        const m = melody(sec.lead)[bIn][st];
-        if (m) {
-          osc('square', mtof(m), t0, SIX * 1.8, 0.06, this.echo);
-          osc('square', mtof(m), t0, SIX * 1.8, 0.06, this.musicGain);
-          if (sec.double) osc('triangle', mtof(m + 12), t0, SIX * 1.5, 0.05, this.musicGain);
-        }
-      }
-    };
-
-    this.pos = 0;
-    this.nextT = c.currentTime + 0.1;
-    this.musicTimer = setInterval(() => {
-      const now = c.currentTime;
-      if (this.nextT < now - 0.2) this.nextT = now + 0.05; // после сворачивания вкладки не «догоняем» пропущенное
-      while (this.nextT < now + 0.12) {
-        if (this.musicOn && !this.adMuted && !this.hidden) step(this.pos, this.nextT);
-        this.nextT += SIX;
-        this.pos++;
-      }
-    }, 25);
+  async startMusic() {
+    if (!this.ctx || !this.musicRaw || this.musicStarted) return;
+    this.musicStarted = true;
+    try {
+      const raw = await this.musicRaw;
+      if (!raw) return;
+      const buf = await this.decode(raw);
+      // Некоторые декодеры mp3 оставляют в начале тишину кодировщика — пропускаем её,
+      // а цикл задаём ровно по длине трека, чтобы стык был без паузы.
+      const ch = buf.getChannelData(0), maxLead = Math.min(ch.length, Math.round(buf.sampleRate * 0.1));
+      let lead = 0;
+      while (lead < maxLead && Math.abs(ch[lead]) < 0.002) lead++;
+      if (lead >= maxLead) lead = 0;
+      const loopStart = lead / buf.sampleRate;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.loopStart = loopStart;
+      src.loopEnd = Math.min(buf.duration, loopStart + MUSIC_LOOP_SECONDS);
+      src.connect(this.musicGain);
+      src.start(0, loopStart);
+      this.musicSrc = src;
+    } catch (e) { this.musicStarted = false; }
   },
 };
 

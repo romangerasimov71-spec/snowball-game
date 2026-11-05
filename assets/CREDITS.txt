@@ -1,4 +1,19 @@
-Звуковые эффекты / Sound effects
+Звуки и музыка / Sounds and music
+=================================
+
+ФОНОВАЯ МУЗЫКА / BACKGROUND MUSIC
+
+assets/music/christmas-synths.ogg / .mp3
+  «Happy synths loop with slight Christmas feeling» — автор / author: 3xBlast
+  Источник / Source: OpenGameArt.org
+    https://opengameart.org/content/happy-synths-loop-with-slight-christmas-feeling
+  Лицензия / License: Creative Commons Zero (CC0 1.0 Universal)
+    http://creativecommons.org/publicdomain/zero/1.0/
+  Сжато в ogg (Vorbis) и mp3, ~96 кбит/с; музыка не изменялась.
+  Compressed to ogg (Vorbis) and mp3, ~96 kbps; the music itself is unchanged.
+
+
+ЗВУКОВЫЕ ЭФФЕКТЫ / SOUND EFFECTS (assets/sfx)
 
 Источник / Source: Kenney (www.kenney.nl)
   - Impact Sounds (1.0)     https://kenney.nl/assets/impact-sounds

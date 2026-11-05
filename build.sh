@@ -24,8 +24,11 @@ build() {
 
   # Общий код + код только своей платформы
   cp js/i18n.js js/audio.js js/sdk.js js/game.js "$dir/js/"
-  # Звуковые эффекты (Kenney, CC0) — во всех сборках
-  mkdir -p "$dir/assets/sfx" && cp assets/sfx/*.ogg assets/sfx/*.mp3 assets/sfx/CREDITS.txt "$dir/assets/sfx/"
+  # Звуковые эффекты (Kenney, CC0) и фоновая музыка (3xBlast, CC0) — во всех сборках
+  mkdir -p "$dir/assets/sfx" "$dir/assets/music"
+  cp assets/sfx/*.ogg assets/sfx/*.mp3 "$dir/assets/sfx/"
+  cp assets/music/*.ogg assets/music/*.mp3 "$dir/assets/music/"
+  cp assets/CREDITS.txt "$dir/assets/"
   case "$name" in
     vk)
       cp js/platform-vk.js js/vk-bridge.min.js js/vk-bridge.LICENSE "$dir/js/"

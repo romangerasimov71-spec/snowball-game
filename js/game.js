@@ -332,7 +332,6 @@ function setMode(m) {
   $('hud').classList.toggle('show', m === 'play' || m === 'pause' || m === 'revive');
   $('hud').classList.toggle('endless', S.run === 'endless');
   if (m === 'play') YSDK.gameplayStart(); else YSDK.gameplayStop();
-  Sfx.setIntensity(m === 'play' ? 1 : 0);
   if (YSDK.bannerModes.includes(m)) YSDK.showBanner(); else YSDK.hideBanner();
   if (m === 'menu') { S.z = 1; }
 }
@@ -2015,6 +2014,8 @@ async function boot() {
   checkDaily();
   $('loading').style.display = 'none';
   YSDK.loadingReady();
+  // Музыка — после старта игры, чтобы не задерживать загрузку
+  setTimeout(() => Sfx.prefetchMusic(), 300);
   requestAnimationFrame(loop);
 }
 
