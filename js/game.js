@@ -125,7 +125,7 @@ const flakes = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.ran
 
 // Текущая локация: в меню — та, где игрок сейчас; в бесконечном режиме меняется каждые 45 с.
 function curZone() {
-  if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels') return zoneFor(save.level);
+  if (['menu', 'shop', 'levels', 'daily'].includes(S.mode)) return zoneFor(save.level);
   if (S.run === 'endless') return ZONES[Math.floor(S.t / 45) % ZONES.length];
   return S.cfg.zone;
 }
@@ -312,12 +312,12 @@ function startRun(run, level) {
 
 function setMode(m) {
   S.mode = m;
-  ['menu', 'shop', 'levels', 'pause', 'revive', 'over', 'win'].forEach(id => $(id).classList.toggle('show', id === m));
+  ['menu', 'shop', 'levels', 'pause', 'revive', 'over', 'win', 'daily', 'share'].forEach(id => $(id).classList.toggle('show', id === m));
   $('hud').classList.toggle('show', m === 'play' || m === 'pause' || m === 'revive');
   $('hud').classList.toggle('endless', S.run === 'endless');
   if (m === 'play') YSDK.gameplayStart(); else YSDK.gameplayStop();
   Sfx.setIntensity(m === 'play' ? 1 : 0);
-  if (m === 'menu' || m === 'over' || m === 'shop' || m === 'win' || m === 'levels') YSDK.showBanner(); else YSDK.hideBanner();
+  if (YSDK.bannerModes.includes(m)) YSDK.showBanner(); else YSDK.hideBanner();
   if (m === 'menu') { S.z = 1; }
 }
 
@@ -397,6 +397,10 @@ function finishRun() {
   $('doubleBtn').style.display = S.coins >= 5 && YSDK.rewardedSupported() ? '' : 'none';
   $('doubleBtn').disabled = false;
   S.reward = S.coins;
+  // Новый рекорд бесконечного режима — предлагаем поделиться
+  $('overShare').hidden = !(isBest && score > 0 && canShare());
+  S.shareInfo = { endless: true, points: score, size: S.maxR };
+  refreshBadges();
   setMode('over');
 }
 
@@ -418,8 +422,15 @@ function levelComplete(bossWin) {
   save.stars[c.n] = Math.max(save.stars[c.n] || 0, stars);
   if (c.n >= save.level) save.level = c.n + 1;
   save.games++;
+  save.wins = (save.wins || 0) + 1;
   persist();
   Sfx.win();
+  S.shareInfo = { level: c.n, stars, size: r };
+  $('winSocial').hidden = !(YSDK.can('invite') || canShare());
+  $('winInvite').hidden = !YSDK.can('invite');
+  $('winShare').hidden = !canShare();
+  refreshBadges();
+  updateWinPromo(newSkin);
   $('winTitle').textContent = bossWin ? t('bossWin') : t('levelDone', { n: c.n });
   $('winSize').textContent = meters(r);
   $('winCoins').textContent = S.reward;
@@ -752,7 +763,7 @@ function shadow(x, y, rx, ry) {
 
 function dangerMark(o) {
   // Подсказка: красное кольцо у того, что нельзя снести
-  if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels' || o.deco) return;
+  if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels' || S.mode === 'daily' || o.deco) return;
   const big = ball.shield <= 0 && ball.r < o.size * SMASH_K;
   ctx.strokeStyle = big ? 'rgba(230,60,60,0.55)' : 'rgba(60,200,110,0.45)';
   ctx.lineWidth = 3 / S.z;
@@ -1575,7 +1586,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (S.mode === 'play') update(dt);
-  else if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels') menuUpdate(dt);
+  else if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels' || S.mode === 'daily') menuUpdate(dt);
   else if (S.mode !== 'pause') updateParts(dt, 0);
   updateFlakes(dt);
   render();
@@ -1593,6 +1604,8 @@ function refreshMenu() {
   $('playBtn').append(lvl);
   const total = Object.values(save.stars).reduce((a, b) => a + b, 0);
   $('menuStars').textContent = total;
+  $('inviteBtn').hidden = !YSDK.can('invite');
+  refreshBadges();
   refreshToggles();
 }
 
@@ -1680,6 +1693,25 @@ function renderShop() {
         save.skin = sk.id; persist(); refreshMenu(); renderShop();
       };
       card.append(cv, nm, b);
+      // Скин можно получить бесплатно за несколько просмотров рекламы
+      if (!owned && sk.zone == null && sk.price > 0 && YSDK.rewardedSupported()) {
+        const need = skinAdsNeeded(sk), have = (save.skinAds || {})[sk.id] || 0;
+        const fb = document.createElement('button'); fb.className = 'btn ghost small ad';
+        fb.textContent = t('freeSkin', { a: have, b: need }).replace(/^▶ /, '');
+        fb.onclick = async () => {
+          if (fb.disabled) return;
+          fb.disabled = true;
+          const ok = await YSDK.showRewarded();
+          if (!ok) { toast(t('adFail')); fb.disabled = false; return; }
+          save.skinAds = save.skinAds || {};
+          save.skinAds[sk.id] = (save.skinAds[sk.id] || 0) + 1;
+          if (save.skinAds[sk.id] >= need) {
+            save.owned.push(sk.id); save.skin = sk.id; Sfx.buy(); toast(t('skinUnlocked'));
+          } else Sfx.coin();
+          persist(); refreshMenu(); renderShop();
+        };
+        card.append(fb);
+      }
       list.append(card);
     }
   } else {
@@ -1754,6 +1786,22 @@ function setupUI() {
   bind('reviveSkip', () => { Sfx.click(); finishRun(); });
   bind('doubleBtn', () => doubleReward($('doubleBtn'), v => { $('overCoins').textContent = v; }));
   bind('winDouble', () => doubleReward($('winDouble'), v => { $('winCoins').textContent = v; }));
+  bind('dailyClaim', () => claimDaily(1));
+  bind('dailyX2', async () => {
+    const b = $('dailyX2');
+    if (b.disabled) return;
+    b.disabled = true;
+    const ok = await YSDK.showRewarded();
+    if (ok) claimDaily(2); else { toast(t('adFail')); b.disabled = false; }
+  });
+  bind('inviteBtn', doInvite);
+  bind('winInvite', doInvite);
+  bind('winShare', openShare);
+  bind('overShare', openShare);
+  bind('shareWall', () => doShare('wall'));
+  bind('shareStory', () => doShare('story'));
+  bind('shareClose', () => { Sfx.click(); setMode(S.shareFrom || 'menu'); });
+  bind('winFav', doFav);
   bind('freeCoinsBtn', async () => {
     const b = $('freeCoinsBtn');
     if (b.disabled) return;
@@ -1770,17 +1818,166 @@ function setupUI() {
   bind('musBtn', toggleMusic); bind('pMusBtn', toggleMusic);
 }
 
+// ---------- Ежедневная награда (серия дней) ----------
+const DAILY = [50, 75, 100, 150, 200, 300, 500];   // 7-й день — большой приз, дальше цикл повторяется
+const INVITE_REWARD = 100, SHARE_REWARD = 50, FAV_REWARD = 200;
+// Дата по местному времени игрока, «YYYY-MM-DD»; offset — сдвиг в днях
+const dayKey = (offset = 0) => new Date(Date.now() + offset * 864e5 - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+
 function checkDaily() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (save.daily !== today) {
-    const first = !save.daily;
-    save.daily = today;
-    const n = first ? 100 : 50;
-    save.coins += n;
-    persist();
-    setTimeout(() => toast(t('daily', { n }), 2600, true), 400);
+  if (save.daily === dayKey(0)) return;
+  // Серия продолжается, если заходил вчера; иначе начинается заново
+  S.pendingStreak = save.daily === dayKey(-1) ? (save.streak || 0) + 1 : 1;
+  renderDaily();
+  setMode('daily');
+}
+
+function renderDaily() {
+  const streak = S.pendingStreak, idx = (streak - 1) % DAILY.length;
+  const box = $('dailyDays'); box.innerHTML = '';
+  DAILY.forEach((n, i) => {
+    const d = document.createElement('div');
+    d.className = 'day' + (i < idx ? ' done' : '') + (i === idx ? ' today' : '') + (i === DAILY.length - 1 ? ' big' : '');
+    const lbl = document.createElement('span'); lbl.textContent = t('dayN', { n: i + 1 });
+    const val = document.createElement('b'); val.textContent = (i < idx ? '✓ ' : '') + n + ' ●';
+    d.append(lbl, val); box.append(d);
+  });
+  $('dailyClaim').textContent = t('claim', { n: DAILY[idx] });
+  $('dailyX2').hidden = !YSDK.rewardedSupported();
+  $('dailyX2').disabled = false;
+}
+
+function claimDaily(mult) {
+  const streak = S.pendingStreak, n = DAILY[(streak - 1) % DAILY.length] * mult;
+  save.coins += n; save.streak = streak; save.daily = dayKey(0);
+  persist(); Sfx.buy(); refreshMenu(); setMode('menu');
+  toast(t('dailyGot', { n, d: streak }), 2400, true);
+}
+
+// ---------- Рост: приглашения, шаринг, избранное ----------
+const canShare = () => YSDK.can('wallpost') || YSDK.can('share') || YSDK.can('story');
+
+// Награда за приглашение и за шаринг — не чаще раза в день
+function refreshBadges() {
+  const inv = save.inviteDay !== dayKey(0) ? '+' + INVITE_REWARD + ' ●' : '';
+  const sh = save.shareDay !== dayKey(0) ? '+' + SHARE_REWARD + ' ●' : '';
+  $('inviteBadge').textContent = inv;
+  document.querySelectorAll('.inviteBadge2').forEach(el => { el.textContent = inv; });
+  document.querySelectorAll('.shareBadge').forEach(el => { el.textContent = sh; });
+}
+
+function grant(n, msgKey) {
+  save.coins += n; persist(); Sfx.buy(); refreshMenu(); refreshBadges();
+  toast(t(msgKey, { n }), 2200);
+}
+
+async function doInvite() {
+  const ok = await YSDK.invite(t('inviteMsg'));
+  if (ok && save.inviteDay !== dayKey(0)) { save.inviteDay = dayKey(0); grant(INVITE_REWARD, 'invited'); }
+}
+
+// Картинка рекорда 1080×1920 для истории: ком текущего скина, размер, уровень. Без ссылок.
+function makeShareCard(info) {
+  const W = 1080, H = 1920;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const zn = info && info.level ? zoneFor(info.level) : ZONES[0];
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, zn.night ? '#16224a' : '#1452b8'); sky.addColorStop(0.6, zn.night ? '#2c3c6a' : '#3f97ec'); sky.addColorStop(1, '#9fd8ff');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(540, 1080, 60, 540, 1080, 760);
+  glow.addColorStop(0, 'rgba(255,220,160,0.55)'); glow.addColorStop(1, 'rgba(255,220,160,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  // Ёлки на горизонте и снежный склон
+  const tree = (x, y, s) => {
+    g.fillStyle = '#1d6b56';
+    for (let i = 0; i < 3; i++) { const w = s * (0.55 - i * 0.12), b = y - i * s * 0.32; g.beginPath(); g.moveTo(x - w, b); g.lineTo(x, b - s * 0.5); g.lineTo(x + w, b); g.fill(); }
+    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(x - s * 0.12, y - s * 0.95); g.lineTo(x, y - s * 1.14); g.lineTo(x + s * 0.12, y - s * 0.95); g.fill();
+  };
+  [[90, 1290, 260], [250, 1250, 190], [880, 1280, 240], [1010, 1240, 170]].forEach(([x, y, s2]) => tree(x, y, s2));
+  const ground = g.createLinearGradient(0, 1250, 0, H);
+  ground.addColorStop(0, '#ffffff'); ground.addColorStop(1, '#cfe6fb');
+  g.fillStyle = ground; g.beginPath(); g.moveTo(0, 1330); g.quadraticCurveTo(540, 1230, W, 1330); g.lineTo(W, H); g.lineTo(0, H); g.fill();
+  // Снег
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 70; i++) { g.beginPath(); g.arc((i * 397) % W, (i * 811) % 1250, 4 + (i % 4) * 2, 0, Math.PI * 2); g.fill(); }
+  // Ком
+  g.fillStyle = 'rgba(30,60,130,0.3)'; g.beginPath(); g.ellipse(560, 1420, 330, 70, 0, 0, Math.PI * 2); g.fill();
+  drawBallAt(g, 540, 1080, 340, 1.4, save.skin, 0.05);
+  g.lineWidth = 8; g.strokeStyle = 'rgba(20,55,130,0.5)'; g.beginPath(); g.arc(540, 1080, 340, 0, Math.PI * 2); g.stroke();
+  // Тексты
+  const text = (str, y, size, color = '#fff', shadow = '#6fa8dc') => {
+    g.font = `900 ${size}px 'Trebuchet MS', 'Segoe UI', Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(0,20,60,0.35)'; g.fillText(str, W / 2 + 4, y + 14);
+    g.fillStyle = shadow; g.fillText(str, W / 2, y + 7);
+    g.fillStyle = color; g.fillText(str, W / 2, y);
+  };
+  text(t('title'), 250, 120);
+  if (info && (info.size || info.points)) {
+    text(t('cardMy'), 1600, 70, '#1d2a44', 'rgba(255,255,255,0.6)');
+    text(info.endless ? String(info.points) : meters(info.size), 1760, 170, '#ffd34d', '#c98a12');
+    const sub = info.endless ? t('cardBest', { p: info.points }) : t('cardLevel', { n: info.level }) + '  ' + '★'.repeat(info.stars || 1);
+    text(sub, 1860, 64, '#1d2a44', 'rgba(255,255,255,0.6)');
+  } else {
+    text(t('subtitle'), 1700, 64, '#1d2a44', 'rgba(255,255,255,0.6)');
+  }
+  return c.toDataURL('image/jpeg', 0.88);
+}
+
+function shareText(info) {
+  return info.endless ? t('shareTextEndless', { p: info.points }) : t('shareText', { s: meters(info.size), n: info.level });
+}
+
+function openShare() {
+  if (!S.shareInfo) return;
+  S.shareFrom = S.mode;
+  S.shareCard = makeShareCard(S.shareInfo);
+  $('shareImg').src = S.shareCard;
+  // VK — «На стену», OK — «Поделиться в ОК» (VKWebAppShare, без ссылок на VK)
+  $('shareWall').hidden = !(YSDK.can('wallpost') || YSDK.can('share'));
+  $('shareWall').textContent = YSDK.can('wallpost') ? t('shareWallVk') : t('shareOk');
+  $('shareStory').hidden = !YSDK.can('story');
+  $('shareHint').textContent = save.shareDay !== dayKey(0) ? t('shareHint', { n: SHARE_REWARD }) : '';
+  setMode('share');
+}
+
+async function doShare(kind) {
+  const btn = kind === 'story' ? $('shareStory') : $('shareWall');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const ok = kind === 'story'
+    ? await YSDK.shareStory(S.shareCard, new URL('img/share-story.jpg', location.href).href)
+    : await YSDK.shareRecord(shareText(S.shareInfo));
+  btn.disabled = false;
+  if (ok && save.shareDay !== dayKey(0)) { save.shareDay = dayKey(0); grant(SHARE_REWARD, 'shared'); $('shareHint').textContent = ''; }
+}
+
+// После 2+ побед предлагаем добавить игру в избранное, затем на главный экран (только VK)
+async function updateWinPromo(newSkin) {
+  const b = $('winFav');
+  b.hidden = true;
+  if (newSkin || (save.wins || 0) < 2) return;
+  if (YSDK.can('favorites') && !save.favDone) { b.dataset.kind = 'fav'; b.textContent = t('fav', { n: FAV_REWARD }); b.hidden = false; return; }
+  if (YSDK.can('homescreen') && !save.homeDone && await YSDK.homeScreenAvailable()) {
+    if (S.mode !== 'win') return;
+    b.dataset.kind = 'home'; b.textContent = t('home', { n: FAV_REWARD }); b.hidden = false;
   }
 }
+
+async function doFav() {
+  const b = $('winFav');
+  if (b.disabled) return;
+  b.disabled = true;
+  const home = b.dataset.kind === 'home';
+  const ok = home ? await YSDK.addToHomeScreen() : await YSDK.addToFavorites();
+  b.disabled = false;
+  if (!ok) return;
+  if (home) save.homeDone = true; else save.favDone = true;
+  b.hidden = true;
+  grant(FAV_REWARD, 'favDone');
+}
+
+const skinAdsNeeded = sk => Math.max(1, Math.ceil(sk.price / 600));
 
 // ---------- Запуск ----------
 async function boot() {
@@ -1809,7 +2006,7 @@ boot();
 
 // Для отладки и автотестов
 window.__game = {
-  S, ball, update, startRun, levelCfg, add, drawBallAt,
+  S, ball, update, startRun, levelCfg, add, drawBallAt, makeShareCard, dayKey,
   get objs() { return objs; },
   get save() { return save; },
 };
