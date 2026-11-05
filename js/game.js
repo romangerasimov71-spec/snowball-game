@@ -569,6 +569,7 @@ function update(dt) {
           const bc = { castle: '#bfe6ff', bigSnowman: '#ffffff', lift: '#e8324a', xmasTree: '#2f7d4f', iceGiant: '#7fe0ff' }[o.kind];
           for (let i = -2; i <= 2; i++) burst(i * halfW() * 0.35, 0, 18, i % 2 ? bc : '#fff', 500, [4, 10], 2);
           Sfx.smash(true);
+          objs = objs.filter(x => x !== o);   // разрушенный босс не должен оставаться под окном победы
           levelComplete(true);
           return;
         }
@@ -1803,7 +1804,7 @@ boot();
 
 // Для отладки и автотестов
 window.__game = {
-  S, ball, update, startRun, levelCfg, add,
+  S, ball, update, startRun, levelCfg, add, drawBallAt,
   get objs() { return objs; },
   get save() { return save; },
 };
