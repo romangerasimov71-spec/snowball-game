@@ -1,4 +1,4 @@
-// Звук синтезируется через WebAudio — никаких файлов, игра весит копейки.
+// Звуковые эффекты — файлы Kenney (CC0) из assets/sfx; фоновая музыка пока синтезируется через WebAudio.
 const Sfx = {
   ctx: null,
   master: null,
@@ -30,6 +30,7 @@ const Sfx = {
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.applyVolume();
+    this.loadSfx();
     this.startMusic();
   },
 
@@ -53,49 +54,91 @@ const Sfx = {
     if (this.ctx) { try { v ? this.ctx.suspend() : this.ctx.resume(); } catch (e) {} }
   },
 
-  tone(freq, dur, type = 'sine', vol = 1, slide = 0, delay = 0, dest) {
-    if (!this.ctx) return;
-    const t0 = this.ctx.currentTime + delay;
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t0);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), t0 + dur);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g);
-    g.connect(dest || this.sfxGain);
-    o.start(t0);
-    o.stop(t0 + dur + 0.05);
+  // ---------- Звуковые эффекты: файлы Kenney (CC0) из assets/sfx ----------
+  // Каждый эффект — один или несколько вариантов; играют через sfxGain → master,
+  // поэтому выключаются кнопкой «Звук», во время рекламы и при сворачивании игры.
+  SFX: {
+    click: ['click'], snow: ['snow1', 'snow2'], coin: ['coin'], hit: ['hit'],
+    smash: ['smash'], smashBig: ['smash-big'], sizzle: ['sizzle'], power: ['power'],
+    reward: ['reward'], win: ['win'], over: ['over'],
+  },
+  buffers: {},
+
+  // ogg там, где браузер его умеет, иначе mp3 (старый Safari)
+  sfxExt() {
+    const a = document.createElement('audio');
+    return a.canPlayType && a.canPlayType('audio/ogg; codecs="vorbis"') ? 'ogg' : 'mp3';
   },
 
-  noise(dur, vol = 1, freq = 1200, delay = 0) {
-    if (!this.ctx) return;
-    const t0 = this.ctx.currentTime + delay;
-    const s = this.ctx.createBufferSource();
-    s.buffer = this.noiseBuf;
-    const f = this.ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = freq;
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(vol, t0);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    s.connect(f); f.connect(g); g.connect(this.sfxGain);
-    s.start(t0);
-    s.stop(t0 + dur + 0.05);
+  decode(buf) {
+    // Старый Safari знает только вариант decodeAudioData с колбэками
+    return new Promise((resolve, reject) => {
+      const p = this.ctx.decodeAudioData(buf, resolve, reject);
+      if (p && p.then) p.then(resolve, reject);
+    });
   },
 
-  snow() { this.tone(500 + Math.random() * 200, 0.12, 'sine', 0.4, 400); },
-  coin() { this.tone(988, 0.08, 'square', 0.15); this.tone(1319, 0.2, 'square', 0.15, 0, 0.07); },
-  smash(big) { this.noise(big ? 0.4 : 0.25, 0.8, big ? 900 : 1600); this.tone(big ? 90 : 140, 0.25, 'triangle', 0.6, -60); },
-  hit() { this.noise(0.35, 1, 500); this.tone(110, 0.4, 'sawtooth', 0.4, -70); },
-  sizzle() { this.noise(0.15, 0.25, 4000); },
-  power() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.15, 'triangle', 0.35, 0, i * 0.07)); },
-  over() { [392, 330, 262, 196].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.4, 0, i * 0.15)); },
-  win() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.25, 'triangle', 0.35, 0, i * 0.1)); },
-  click() { this.tone(700, 0.06, 'sine', 0.3); },
-  buy() { [659, 880, 1175].forEach((f, i) => this.tone(f, 0.12, 'square', 0.12, 0, i * 0.06)); },
+  // Файлы скачиваем сразу при загрузке игры (звук для этого не нужен),
+  // а раскодируем, когда после первого касания появится AudioContext.
+  prefetchSfx() {
+    if (this.raw) return;
+    this.raw = {};
+    const ext = this.sfxExt();
+    const names = [...new Set(Object.values(this.SFX).flat())];
+    for (const name of names) {
+      this.raw[name] = (async () => {
+        for (const e of ext === 'ogg' ? ['ogg', 'mp3'] : ['mp3']) {
+          try {
+            const res = await fetch(`assets/sfx/${name}.${e}`);
+            if (res.ok) return await res.arrayBuffer();
+          } catch (err) { /* пробуем следующий формат */ }
+        }
+        return null;   // без файла эффект просто не прозвучит
+      })();
+    }
+  },
+
+  loadSfx() {
+    this.prefetchSfx();
+    this.pending = [];
+    for (const name in this.raw) {
+      this.raw[name].then(buf => buf && this.decode(buf)).then(decoded => {
+        if (!decoded) return;
+        this.buffers[name] = decoded;
+        // Звук, запрошенный до раскодирования (первое касание), играем, если он ещё уместен
+        const now = performance.now();
+        this.pending = this.pending.filter(([key, vol, rate, at]) => {
+          if (!this.SFX[key].includes(name)) return true;
+          if (now - at < 500) this.play(key, vol, rate);
+          return false;
+        });
+      }).catch(() => {});
+    }
+  },
+
+  play(key, vol = 1, rate = 1) {
+    if (!this.ctx) return;
+    const list = this.SFX[key].filter(n => this.buffers[n]);
+    if (!list.length) { if (this.pending) this.pending.push([key, vol, rate, performance.now()]); return; }
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.buffers[list[(Math.random() * list.length) | 0]];
+    src.playbackRate.value = rate;
+    const g = this.ctx.createGain();
+    g.gain.value = vol;
+    src.connect(g); g.connect(this.sfxGain);
+    src.start();
+  },
+
+  snow() { this.play('snow', 0.8, 0.95 + Math.random() * 0.15); },
+  coin() { this.play('coin', 0.7, 0.97 + Math.random() * 0.06); },
+  smash(big) { this.play(big ? 'smashBig' : 'smash', big ? 1 : 0.85, 0.92 + Math.random() * 0.16); },
+  hit() { this.play('hit', 1); },
+  sizzle() { this.play('sizzle', 0.35); },
+  power() { this.play('power', 0.8); },
+  over() { this.play('over', 0.8); },
+  win() { this.play('win', 0.8); },
+  click() { this.play('click', 0.7); },
+  buy() { this.play('reward', 0.75); },
 
   // Динамичный трек, 140 BPM, ля минор. 8 частей по 4 такта (~55 с) до повтора:
   // A A2 B C A D B2 C2. У каждой части своя гармония и мелодия; в меню — без барабанов.
@@ -235,3 +278,6 @@ const Sfx = {
     }, 25);
   },
 };
+
+// Скачиваем звуковые файлы заранее, пока игрок смотрит на загрузку и меню
+Sfx.prefetchSfx();
