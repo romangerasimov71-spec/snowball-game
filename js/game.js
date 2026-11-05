@@ -25,10 +25,10 @@ const SKINS = [
 ];
 
 const UPGRADES = [
-  { id: 'size',   max: 5, cost: l => 100 + l * 150, icon: '⬤' },
-  { id: 'magnet', max: 5, cost: l => 120 + l * 160, icon: '🧲' },
-  { id: 'shield', max: 5, cost: l => 120 + l * 160, icon: '🛡' },
-  { id: 'coin',   max: 5, cost: l => 200 + l * 250, icon: '●' },
+  { id: 'size',   max: 5, cost: l => 100 + l * 150 },
+  { id: 'magnet', max: 5, cost: l => 120 + l * 160 },
+  { id: 'shield', max: 5, cost: l => 120 + l * 160 },
+  { id: 'coin',   max: 5, cost: l => 200 + l * 250 },
 ];
 
 let save = {
@@ -75,6 +75,22 @@ const ZONES = [
 ];
 const zoneIndex = n => Math.floor((n - 1) / 5) % ZONES.length;
 const zoneFor = n => ZONES[zoneIndex(n)];
+
+// ---------- Векторные иконки интерфейса (вместо эмодзи) ----------
+const SVG = (body, extra = '') => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${extra}>${body}</svg>`;
+const SPEAKER = '<path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>';
+const NOTE = '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5" fill="currentColor"/><circle cx="17.5" cy="16" r="2.5" fill="currentColor"/>';
+const ICONS = {
+  sound: SVG(SPEAKER + '<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'),
+  soundOff: SVG(SPEAKER + '<path d="M17 9.5l5 5M22 9.5l-5 5"/>'),
+  music: SVG(NOTE),
+  musicOff: SVG(NOTE + '<path d="M3 3l18 18"/>'),
+  lock: SVG('<rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  size: SVG('<circle cx="12" cy="12" r="9" fill="#eaf6ff" stroke="#86b9ec"/><circle cx="9" cy="9" r="2.6" fill="#fff" stroke="none"/>'),
+  magnet: SVG('<path d="M6 4v8a6 6 0 0 0 12 0V4" stroke="#e8324a" stroke-width="4" stroke-linecap="butt"/><path d="M6 3.5v3M18 3.5v3" stroke="#d6dbe4" stroke-width="4" stroke-linecap="butt"/>'),
+  shield: SVG('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" fill="#4fb3ff" stroke="#2a7fd4" stroke-width="1.5"/><path d="M12 6v12" stroke="#bfe6ff" stroke-width="1.5"/>'),
+  coin: SVG('<circle cx="12" cy="12" r="9" fill="#ffd34d" stroke="#c98a12" stroke-width="2"/><path d="M12 7l1.5 3.3 3.5.4-2.6 2.4.7 3.5L12 15l-3.1 1.6.7-3.5L7 10.7l3.5-.4z" fill="#fff6c2" stroke="none"/>'),
+};
 
 // ---------- Canvas ----------
 const canvas = document.getElementById('game');
@@ -138,7 +154,7 @@ const keys = {};
 let pointerDown = false, lastPX = 0;
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.code === 'Escape' || e.code === 'KeyP') {
+  if (e.code === 'KeyP') {
     if (S.mode === 'play') pauseGame(); else if (S.mode === 'pause') resumeGame();
   }
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
@@ -1610,11 +1626,11 @@ function refreshMenu() {
 }
 
 function refreshToggles() {
-  for (const [id, on, icOn, icOff] of [['sndBtn', save.sound, '🔊', '🔇'], ['pSndBtn', save.sound, '🔊', '🔇'], ['musBtn', save.music, '🎵', '🎵'], ['pMusBtn', save.music, '🎵', '🎵']]) {
+  for (const [id, on, icOn, icOff] of [['sndBtn', save.sound, 'sound', 'soundOff'], ['pSndBtn', save.sound, 'sound', 'soundOff'], ['musBtn', save.music, 'music', 'musicOff'], ['pMusBtn', save.music, 'music', 'musicOff']]) {
     const el = $(id);
     el.classList.toggle('off', !on);
-    const ic = el.querySelector('.ic');
-    if (ic) ic.textContent = on ? icOn : icOff; else el.textContent = on ? icOn : icOff;
+    const ic = el.querySelector('.ic') || el;
+    ic.innerHTML = ICONS[on ? icOn : icOff];
   }
 }
 
@@ -1650,7 +1666,7 @@ function renderLevels() {
       const n = g * 5 + i, locked = n > save.level;
       const b = document.createElement('button');
       b.className = 'lv' + (locked ? ' locked' : '') + (n === save.level ? ' cur' : '') + (i === 5 ? ' bossLv' : '');
-      const num = document.createElement('span'); num.className = 'num'; num.textContent = locked ? '🔒' : n;
+      const num = document.createElement('span'); num.className = 'num'; if (locked) num.innerHTML = ICONS.lock; else num.textContent = n;
       const stars = document.createElement('span'); stars.className = 'st';
       const k = save.stars[n] || 0;
       stars.textContent = locked ? '' : '★'.repeat(k) + '☆'.repeat(3 - k);
@@ -1682,7 +1698,8 @@ function renderShop() {
       drawBallAt(cv.getContext('2d'), 64, 64, 56, 1.2, sk.id);
       const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = t('sk_' + sk.id);
       const b = document.createElement('button'); b.className = 'btn' + (owned ? (sel ? ' ghost' : ' green') : ' gold');
-      b.textContent = owned ? (sel ? t('selected') : t('select')) : sk.zone != null ? '🔒 ' + t('zone_' + ZONES[sk.zone].id) : '● ' + sk.price;
+      b.textContent = owned ? (sel ? t('selected') : t('select')) : sk.zone != null ? ' ' + t('zone_' + ZONES[sk.zone].id) : '● ' + sk.price;
+      if (!owned && sk.zone != null) b.insertAdjacentHTML('afterbegin', ICONS.lock);
       if (sk.zone != null && !owned) b.className = 'btn ghost small';
       b.disabled = sel || (!owned && (sk.zone != null || save.coins < sk.price));
       b.onclick = () => {
@@ -1718,8 +1735,7 @@ function renderShop() {
     for (const up of UPGRADES) {
       const lv = save.up[up.id], maxed = lv >= up.max, cost = up.cost(lv);
       const card = document.createElement('div'); card.className = 'card';
-      const ic = document.createElement('div'); ic.style.fontSize = '36px'; ic.textContent = up.icon;
-      if (up.id === 'coin') ic.style.color = '#ffd34d';
+      const ic = document.createElement('div'); ic.style.fontSize = '36px'; ic.innerHTML = ICONS[up.id];
       const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = t('up_' + up.id);
       const ds = document.createElement('div'); ds.className = 'ds'; ds.textContent = t('up_' + up.id + '_d');
       const lvl = document.createElement('div'); lvl.className = 'lvl';
@@ -1747,7 +1763,7 @@ async function playWithAd(run, level) {
   starting = true;
   Sfx.click();
   // Полноэкранная реклама — только между забегами, не чаще раза в ~минуту.
-  if (save.games > 0) await YSDK.showFullscreen();
+  if (save.games > 0 || YSDK.platform === 'playgama') await YSDK.showFullscreen();
   starting = false;
   last = performance.now();
   startRun(run, level);

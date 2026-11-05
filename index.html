@@ -20,6 +20,7 @@
     if ((window.IS_VK || window.IS_OK) && window.vkBridge) vkBridge.send('VKWebAppInit').catch(function () {});
   })();
 </script>
+<script src="js/platform-vk.js"></script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -158,6 +159,13 @@
   .lv.locked .num { font-size: 18px; }
   .lv:active:not(.locked) { transform: translateY(3px); box-shadow: 0 1px 0 #1b5a9a; }
   .newSkin { display: flex; align-items: center; gap: 12px; background: rgba(255,211,77,.15); border: 2px solid #ffd34d; border-radius: 16px; padding: 8px 16px 8px 8px; text-align: left; }
+  .ico { width: 1.1em; height: 1.1em; vertical-align: -0.18em; flex: none; }
+  .toggles button .ico { width: 24px; height: 24px; vertical-align: middle; }
+  .lv .num .ico { width: 22px; height: 22px; color: #ffd34d; }
+  .prog b.flag svg { width: 16px; height: 16px; display: block; }
+  .spin { animation: spin 2.4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
   .newSkin[hidden], .btn[hidden], .stat[hidden], .row[hidden] { display: none; }
   /* Социальные кнопки и награды */
   .btn.social { background: linear-gradient(#7d6bff, #5a45d6); box-shadow: 0 6px 0 #3d2c9e, 0 10px 20px rgba(0,0,0,.3); font-size: 18px; }
@@ -199,7 +207,7 @@
     <div id="hudScore">0</div>
     <div class="levelBox">
       <div class="levelTop"><span id="hudLevel"></span><span id="hudStars"><i>★</i><i>★</i><i>★</i></span></div>
-      <div class="prog"><i id="hudProg"></i><b>🏁</b></div>
+      <div class="prog"><i id="hudProg"></i><b class="flag"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1v14" stroke="#e6f2ff" stroke-width="1.6" stroke-linecap="round"/><rect x="3" y="2" width="11" height="7" fill="#fff"/><path d="M3 2h2.75v2.33H3zM8.5 2h2.75v2.33H8.5zM5.75 4.33H8.5v2.34H5.75zM11.25 4.33H14v2.34h-2.75zM3 6.67h2.75V9H3zM8.5 6.67h2.75V9H8.5z" fill="#1d2a44"/></svg></b></div>
     </div>
   </div>
   <div class="hudRight">
@@ -220,8 +228,8 @@
   <button class="btn" id="endlessBtn" data-t="endless"></button>
   <button class="btn social" id="inviteBtn" hidden><span data-t="invite"></span> <em class="badge" id="inviteBadge"></em></button>
   <div class="toggles">
-    <button id="sndBtn" aria-label="sound">🔊</button>
-    <button id="musBtn" aria-label="music">🎵</button>
+    <button id="sndBtn" aria-label="sound"></button>
+    <button id="musBtn" aria-label="music"></button>
   </div>
 </div>
 
@@ -251,8 +259,8 @@
   <button class="btn green big" id="resumeBtn" data-t="resume"></button>
   <button class="btn" id="pauseMenuBtn" data-t="menu"></button>
   <div class="row">
-    <button class="btn ghost toggle" id="pSndBtn"><span class="ic">🔊</span> <span data-t="sound"></span></button>
-    <button class="btn ghost toggle" id="pMusBtn"><span class="ic">🎵</span> <span data-t="music"></span></button>
+    <button class="btn ghost toggle" id="pSndBtn"><span class="ic"></span> <span data-t="sound"></span></button>
+    <button class="btn ghost toggle" id="pMusBtn"><span class="ic"></span> <span data-t="music"></span></button>
   </div>
 </div>
 
@@ -311,7 +319,7 @@
 </div>
 
 <div id="toast"></div>
-<div id="loading">❄</div>
+<div id="loading"><svg class="spin" viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="#cfe6ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M12 2l-2 2.5M12 2l2 2.5M12 22l-2-2.5M12 22l2-2.5"/></svg></div>
 
 <script src="js/i18n.js"></script>
 <script src="js/audio.js"></script>

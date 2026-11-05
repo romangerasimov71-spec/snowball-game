@@ -1,0 +1,27 @@
+Звуковые эффекты / Sound effects
+
+Источник / Source: Kenney (www.kenney.nl)
+  - Impact Sounds (1.0)     https://kenney.nl/assets/impact-sounds
+  - Interface Sounds (1.0)  https://kenney.nl/assets/interface-sounds
+  - Music Jingles           https://kenney.nl/assets/music-jingles
+
+Лицензия / License: Creative Commons Zero (CC0 1.0 Universal)
+  http://creativecommons.org/publicdomain/zero/1.0/
+  Свободное использование в личных и коммерческих проектах; указание автора не обязательно.
+  Free to use in personal, educational and commercial projects; credit is not required.
+
+Файлы конвертированы в моно ogg (Vorbis) и mp3; содержимое не изменялось.
+Files were converted to mono ogg (Vorbis) and mp3; the sounds themselves are unchanged.
+
+click.ogg / .mp3         ← Interface Sounds: click_001.ogg  (клик кнопки)
+snow1.ogg / .mp3         ← Impact Sounds: footstep_snow_000.ogg  (сбор снега (вариант 1))
+snow2.ogg / .mp3         ← Impact Sounds: footstep_snow_001.ogg  (сбор снега (вариант 2))
+coin.ogg / .mp3          ← Interface Sounds: glass_002.ogg  (сбор монеты, звёзды на экране победы)
+hit.ogg / .mp3           ← Impact Sounds: impactPunch_heavy_000.ogg  (удар о препятствие больше кома)
+smash.ogg / .mp3         ← Impact Sounds: impactWood_medium_000.ogg  (снос объекта)
+smash-big.ogg / .mp3     ← Impact Sounds: impactPlank_medium_000.ogg  (снос крупного объекта и босса)
+sizzle.ogg / .mp3        ← Interface Sounds: scratch_001.ogg  (ком тает у костра)
+power.ogg / .mp3         ← Interface Sounds: maximize_004.ogg  (бонус: магнит / ледяной панцирь)
+reward.ogg / .mp3        ← Interface Sounds: confirmation_002.ogg  (награда: покупка, монеты за рекламу, ежедневный подарок)
+win.ogg / .mp3           ← Music Jingles: jingles_STEEL16.ogg  (победа на уровне)
+over.ogg / .mp3          ← Music Jingles: jingles_STEEL14.ogg  (проигрыш)
