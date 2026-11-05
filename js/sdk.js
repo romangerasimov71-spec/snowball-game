@@ -22,7 +22,7 @@ const YSDK = {
 
   async init() {
     // VK Игры: подменяем методы платформы на VK-версии
-    if (window.IS_VK && window.vkBridge) {
+    if ((window.IS_VK || window.IS_OK) && window.vkBridge) {
       Object.assign(this, VKPlatform);
       await this.vkInit();
       return;
@@ -108,6 +108,8 @@ const YSDK = {
   },
 
   showBanner() { try { this.sdk && this.sdk.adv.showBannerAdv(); } catch (e) {} },
+  // Можно ли вообще предлагать рекламу за вознаграждение (false — кнопки «за рекламу» скрываются)
+  rewardedSupported() { return true; },
   hideBanner() { try { this.sdk && this.sdk.adv.hideBannerAdv(); } catch (e) {} },
 
   // Сохранения: облако Яндекса + localStorage как резерв.
@@ -143,29 +145,53 @@ const YSDK = {
   },
 };
 
-// ---------- VK Игры (VK Bridge) ----------
-// Каждый вызов моста ограничен по времени: вне VK (или при сбое клиента) мост может не ответить,
-// и игра не должна из-за этого зависнуть.
+// ---------- VK Игры и Одноклассники (VK Bridge) ----------
+// Одна сборка работает в VK и в OK (OK получает те же события моста, но не все из них поддерживает).
+// Правила, чтобы игра никогда не зависала:
+//  • каждый вызов моста ограничен по времени;
+//  • если клиент прямо сообщает, что метод не поддерживается, вызов не делается вовсе;
+//  • реклама показывается только после подтверждения VKWebAppCheckNativeAds,
+//    иначе игрок сразу видит «Реклама недоступна», а не ждёт ответа, который не придёт;
+//  • сохранения всегда пишутся и локально, облако — дополнительно.
 const VKPlatform = {
-  platform: 'vk',
   local: false,
   ads: { interstitial: false, reward: false },
   bannerShown: false,
+  caps: {},           // метод → true / false / undefined (неизвестно)
 
   call(method, params = {}, timeout = 4000) {
+    if (this.caps[method] === false) return Promise.reject(new Error('unsupported: ' + method));
     return Promise.race([
       vkBridge.send(method, params),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout: ' + method)), timeout)),
     ]);
   },
 
+  // Спрашиваем клиент, что он умеет. Нет ответа — считаем «неизвестно» и работаем через таймауты.
+  async detectCaps() {
+    if (typeof vkBridge.supportsAsync !== 'function') return;
+    const methods = ['VKWebAppStorageGet', 'VKWebAppStorageSet', 'VKWebAppCheckNativeAds', 'VKWebAppShowNativeAds', 'VKWebAppShowBannerAd', 'VKWebAppHideBannerAd'];
+    const ask = m => Promise.race([
+      vkBridge.supportsAsync(m),
+      new Promise(r => setTimeout(() => r(undefined), 1500)),
+    ]).catch(() => undefined);
+    // Контрольные методы есть в любом отвечающем клиенте. Если и они «не поддерживаются»,
+    // значит клиент не ответил (мост тогда считает, что есть только VKWebAppInit) — это «неизвестно».
+    const control = ['VKWebAppGetLaunchParams', 'VKWebAppGetUserInfo', 'VKWebAppClose'];
+    const res = await Promise.all(methods.concat(control).map(ask));
+    const answered = res.slice(methods.length).some(v => v === true);
+    methods.forEach((m, i) => { this.caps[m] = answered ? res[i] : undefined; });
+  },
+
   async vkInit() {
+    this.platform = window.IS_OK ? 'ok' : 'vk';
     this.params = new URLSearchParams(location.search);
     vkBridge.subscribe(e => {
       const type = e && e.detail && e.detail.type;
       if (type === 'VKWebAppViewHide') this.onHide && this.onHide(true);
       if (type === 'VKWebAppViewRestore') this.onHide && this.onHide(false);
     });
+    await this.detectCaps();
     // Заранее проверяем наличие рекламы, чтобы показ был быстрым
     this.preloadAd('interstitial');
     this.preloadAd('reward');
@@ -173,13 +199,13 @@ const VKPlatform = {
 
   lang() { return this.params.get('vk_language') || (navigator.language || 'ru').slice(0, 2); },
 
-  // У VK нет аналогов LoadingAPI / GameplayAPI
+  // Аналогов LoadingAPI / GameplayAPI нет
   loadingReady() {},
   gameplayStart() {},
   gameplayStop() {},
 
-  preloadAd(format) {
-    return this.call('VKWebAppCheckNativeAds', { ad_format: format })
+  preloadAd(format, timeout = 4000) {
+    return this.call('VKWebAppCheckNativeAds', { ad_format: format }, timeout)
       .then(r => (this.ads[format] = !!(r && r.result)))
       .catch(() => (this.ads[format] = false));
   },
@@ -187,28 +213,33 @@ const VKPlatform = {
   async showFullscreen() {
     const now = Date.now();
     if (now - this.lastFullscreen < 65000) return false;
-    this.lastFullscreen = now;
     if (!this.ads.interstitial) { this.preloadAd('interstitial'); return false; }
+    this.lastFullscreen = now;
     Sfx.setAdMute(true);
     try {
       const r = await this.call('VKWebAppShowNativeAds', { ad_format: 'interstitial' }, 60000);
       return !!(r && r.result);
     } catch (e) { return false; }
-    finally { Sfx.setAdMute(false); this.preloadAd('interstitial'); }
+    finally { Sfx.setAdMute(false); this.ads.interstitial = false; this.preloadAd('interstitial'); }
+  },
+
+  rewardedSupported() {
+    return this.caps.VKWebAppShowNativeAds !== false && this.caps.VKWebAppCheckNativeAds !== false;
   },
 
   async showRewarded() {
+    // Нет подтверждённой рекламы — сразу отказ (игра покажет «Реклама недоступна»)
+    if (!this.ads.reward && !(await this.preloadAd('reward', 1500))) return false;
     Sfx.setAdMute(true);
     try {
-      if (!this.ads.reward) await this.preloadAd('reward');
       const r = await this.call('VKWebAppShowNativeAds', { ad_format: 'reward' }, 120000);
       return !!(r && r.result);
     } catch (e) { return false; }
-    finally { Sfx.setAdMute(false); this.preloadAd('reward'); }
+    finally { Sfx.setAdMute(false); this.ads.reward = false; this.preloadAd('reward'); }
   },
 
   showBanner() {
-    if (this.bannerShown) return;
+    if (this.bannerShown || this.caps.VKWebAppShowBannerAd === false) return;
     this.bannerShown = true;
     this.call('VKWebAppShowBannerAd', { banner_location: 'bottom', layout_type: 'resize' }).catch(() => { this.bannerShown = false; });
   },
@@ -218,7 +249,11 @@ const VKPlatform = {
     this.call('VKWebAppHideBannerAd').catch(() => {});
   },
 
-  // Хранилище VK ограничено 4096 символами на ключ — звёзды упаковываем в строку цифр.
+  // Прогресс VK и OK хранится раздельно: свои ключи и в облаке, и локально.
+  cloudKey() { return this.platform === 'ok' ? 'save_ok' : 'save'; },
+  localKey() { return this.platform === 'ok' ? 'snowball_save_ok' : 'snowball_save_vk'; },
+
+  // Хранилище ограничено 4096 символами на ключ — звёзды упаковываем в строку цифр.
   pack(data) {
     const st = data.stars || {};
     const max = Math.max(0, ...Object.keys(st).map(Number));
@@ -236,28 +271,40 @@ const VKPlatform = {
     return d;
   },
 
-  async load() {
-    let local = null, cloud = null;
-    try { local = JSON.parse(localStorage.getItem('snowball_save') || 'null'); } catch (e) {}
+  readLocal() {
     try {
-      const r = await this.call('VKWebAppStorageGet', { keys: ['save'] }, 2500);
+      let v = localStorage.getItem(this.localKey());
+      // Прогресс VK до разделения площадок лежал под общим ключом
+      if (!v && this.platform === 'vk') v = localStorage.getItem('snowball_save');
+      return JSON.parse(v || 'null');
+    } catch (e) { return null; }
+  },
+
+  async load() {
+    let cloud = null;
+    const local = this.readLocal();
+    this.cloudOk = false;
+    try {
+      const r = await this.call('VKWebAppStorageGet', { keys: [this.cloudKey()] }, 2500);
+      this.cloudOk = true;
       const v = r && r.keys && r.keys[0] && r.keys[0].value;
       if (v) cloud = this.unpack(v);
-    } catch (e) { /* нет ответа — работаем с локальным сохранением */ }
+    } catch (e) { /* облако недоступно — работаем с локальным сохранением */ }
     if (cloud && local) return (cloud.t || 0) >= (local.t || 0) ? cloud : local;
     return cloud || local;
   },
 
   save(data) {
     data.t = Date.now();
-    try { localStorage.setItem('snowball_save', JSON.stringify(data)); } catch (e) {}
+    try { localStorage.setItem(this.localKey(), JSON.stringify(data)); } catch (e) {}
+    if (this.caps.VKWebAppStorageSet === false) return;
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       const value = this.pack(data);
-      if (value.length <= 4096) this.call('VKWebAppStorageSet', { key: 'save', value }).catch(() => {});
+      if (value.length <= 4096) this.call('VKWebAppStorageSet', { key: this.cloudKey(), value }).catch(() => {});
     }, 800);
   },
 
-  // Таблица рекордов VK открывается отдельным окном — во время игры его не показываем
+  // Таблица рекордов открывается отдельным окном — во время игры его не показываем
   submitScore() {},
 };
