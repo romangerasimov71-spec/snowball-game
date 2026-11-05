@@ -1,0 +1,14 @@
+{
+    "advertisement": {
+        "interstitial": {
+            "preloadOnStart": "level_transition",
+            "placementFallback": "level_transition",
+            "placements": [{ "id": "level_transition" }]
+        },
+        "rewarded": {
+            "preloadOnStart": "reward",
+            "placementFallback": "reward",
+            "placements": [{ "id": "reward" }]
+        }
+    }
+}

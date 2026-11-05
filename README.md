@@ -108,6 +108,17 @@
 - **Сохранения раздельные:** VK — облачный ключ `save`, локальный `snowball_save_vk`; OK — `save_ok` и `snowball_save_ok`; Яндекс/обычный режим — `snowball_save`.
 - Каждый вызов моста ограничен по времени: если клиент не ответит, игра не зависнет (загрузка до ~2,5 с, реклама отвечает отказом за ~1,5 с).
 
+## Playgama
+
+Отдельная сборка `dist/snowball-playgama.zip` (`./build.sh`) с [Playgama Bridge SDK](https://wiki.playgama.com/playgama/bridge-sdk) 2.4.0 (файл `playgama/playgama-bridge.js`, лицензия LGPL-3.0 — `playgama/LICENSE-playgama-bridge.txt`) и `playgama-bridge-config.json`. VK Bridge, SDK Яндекса и код VK/OK в неё не попадают.
+
+- SDK — первый скрипт в `<head>`, игра ждёт `bridge.initialize()`; `game_ready` — когда показано меню.
+- Язык — только из `bridge.platform.language` (английский по умолчанию).
+- Сохранения — только `bridge.storage` (ключ `save`), без `localStorage`.
+- Звук: начальное `platform.isAudioEnabled` + события `AUDIO_STATE_CHANGED`; пауза — `PAUSE_STATE_CHANGED`.
+- Межстраничная — `showInterstitial()` на каждом переходе к забегу, частоту решает Bridge; за вознаграждение — награда только в состоянии `rewarded`, кнопки скрыты, если `isRewardedSupported = false`.
+- Социальных функций и ссылок нет; баннер не используется.
+
 ## Запуск локально
 
 ```bash
@@ -142,7 +153,10 @@ python3 -m http.server 8000
 ```
 index.html     — разметка, стили, экраны интерфейса
 js/game.js     — игровая логика, отрисовка, магазин
-js/sdk.js      — платформа: Yandex Games SDK и VK Bridge (реклама, сохранения, пауза)
+js/sdk.js      — общий слой платформы и Яндекс Игры
+js/platform-vk.js       — VK Игры и Одноклассники (VK Bridge)
+js/platform-playgama.js — Playgama (Bridge SDK)
+playgama/      — Playgama Bridge SDK и его конфиг
 js/audio.js    — синтез звука и музыки
 js/i18n.js     — тексты RU/EN
 build.sh       — сборка zip для Яندекс Игр и VK Игр

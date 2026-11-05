@@ -1,32 +1,54 @@
 #!/usr/bin/env bash
 # Собирает архивы для загрузки (index.html в корне архива):
-#   dist/snowball-yandex.zip — Яндекс Игры (без VK Bridge)
-#   dist/snowball-vk.zip     — VK Игры (без SDK Яндекса)
+#   dist/snowball-yandex.zip   — Яндекс Игры (SDK Яндекса)
+#   dist/snowball-vk.zip       — VK Игры и Одноклассники (VK Bridge)
+#   dist/snowball-playgama.zip — Playgama (Playgama Bridge SDK + playgama-bridge-config.json)
+# В index.html блоки платформ помечены <!-- имя:start --> … <!-- имя:end -->;
+# каждая сборка оставляет только свой блок.
 set -e
 cd "$(dirname "$0")"
 rm -rf dist && mkdir -p dist
+PLATFORMS="yandex vk playgama"
 
 build() {
-  local name="$1" drop="$2"
+  local name="$1"
   local dir="dist/$name"
   mkdir -p "$dir/js"
-  # Убираем блок другой платформы, помеченный <!-- drop:start --> … <!-- drop:end -->
-  sed -e "/<!-- $drop:start -->/,/<!-- $drop:end -->/d" -e '/<!-- [a-z]*:\(start\|end\) -->/d' index.html > "$dir/index.html"
-  cp js/*.js "$dir/js/"
-  # Картинка для историй нужна только в VK/OK
-  if [ -d img ] && [ "$name" != yandex ]; then mkdir -p "$dir/img" && cp img/* "$dir/img/"; fi
-  if [ "$name" = yandex ]; then rm "$dir/js/vk-bridge.min.js"; else cp js/vk-bridge.LICENSE "$dir/js/"; fi
+
+  local sed_args=()
+  for other in $PLATFORMS; do
+    [ "$other" = "$name" ] && continue
+    sed_args+=(-e "/<!-- $other:start -->/,/<!-- $other:end -->/d")
+  done
+  sed "${sed_args[@]}" -e '/<!-- [a-z]*:\(start\|end\) -->/d' index.html > "$dir/index.html"
+
+  # Общий код + код только своей платформы
+  cp js/i18n.js js/audio.js js/sdk.js js/game.js "$dir/js/"
+  case "$name" in
+    vk)
+      cp js/platform-vk.js js/vk-bridge.min.js js/vk-bridge.LICENSE "$dir/js/"
+      mkdir -p "$dir/img" && cp img/* "$dir/img/"      # картинка для историй
+      ;;
+    playgama)
+      cp js/platform-playgama.js "$dir/js/"
+      cp playgama/playgama-bridge.js playgama/playgama-bridge-config.json playgama/LICENSE-playgama-bridge.txt "$dir/"
+      ;;
+  esac
+
   (
     cd "$dir"
     if command -v zip >/dev/null; then
-      zip -r -9 "../snowball-$name.zip" index.html js $( [ -d img ] && echo img ) >/dev/null
+      zip -r -9 "../snowball-$name.zip" . >/dev/null
     else
-      python3 -c "import zipfile,os;z=zipfile.ZipFile('../snowball-$name.zip','w',zipfile.ZIP_DEFLATED);z.write('index.html');[z.write(os.path.join(d,f)) for d in ('js','img') if os.path.isdir(d) for f in sorted(os.listdir(d))];z.close()"
+      python3 -c "import zipfile,os
+z=zipfile.ZipFile('../snowball-$name.zip','w',zipfile.ZIP_DEFLATED)
+for root,_,files in os.walk('.'):
+    for f in sorted(files): z.write(os.path.join(root,f), os.path.relpath(os.path.join(root,f),'.'))
+z.close()"
     fi
   )
   rm -rf "$dir"
   echo "Готово: dist/snowball-$name.zip ($(du -h "dist/snowball-$name.zip" | cut -f1))"
 }
 
-build yandex vk
-build vk yandex
+for p in $PLATFORMS; do build "$p"; done
