@@ -2,6 +2,9 @@
 'use strict';
 
 // ---------- Константы и данные ----------
+// Канал поддержки (требование ВК): сообщество или почта. Пусто — строка «Поддержка» в паузе скрыта.
+// Адрес даёт Роман; вписать одну строку, например 'vk.com/club123' или 'mail@example.ru'.
+const SUPPORT = '';
 const BASE_W = 480, BASE_H = 820, MAX_LANE = 720;
 const MIN_R = 9;          // меньше — ком растаял/разбился
 const START_R = 20;       // 20 единиц = 40 см в диаметре
@@ -1638,6 +1641,9 @@ function applyTexts() {
   document.title = t('title');
   $('freeCoinsBtn').textContent = t('freeCoins', { n: 50 });
   $('freeCoinsBtn').style.display = YSDK.rewardedSupported() ? '' : 'none';
+  const sup = $('supportLine');
+  sup.hidden = !SUPPORT;
+  sup.textContent = SUPPORT ? t('support') + ': ' + SUPPORT : '';
 }
 
 // Карта уровней: группы по локациям, звёзды, замки на непройденных

@@ -9,6 +9,7 @@ const FEATURES = {
   ok: { invite: true, wallpost: false, story: true, share: true, favorites: false, homescreen: false },
 };
 const FULLSCREEN_COOLDOWN = 150000;   // межстраничная реклама — не чаще раза в 2,5 минуты
+const FIRST_FULLSCREEN_DELAY = 45000;  // первый показ — не раньше 45 с после запуска (ВК: нельзя рекламу на старте)
 
 // Отказ пользователя (закрыл окно) — не ошибка клиента, повторять не нужно
 const userCancelled = e => {
@@ -34,6 +35,9 @@ const VKPlatform = {
     this.platform = window.IS_OK ? 'ok' : 'vk';
     this.params = new URLSearchParams(location.search);
     this.appId = this.params.get('vk_app_id') || '54877124';
+    // Отсчёт частоты рекламы — от запуска игры, а не от нуля: иначе вернувшийся игрок
+    // получал межстраничную рекламу на первом же «Играть» через пару секунд после старта.
+    this.lastFullscreen = Date.now() - FULLSCREEN_COOLDOWN + FIRST_FULLSCREEN_DELAY;
     vkBridge.subscribe(e => {
       const type = e && e.detail && e.detail.type;
       if (type === 'VKWebAppViewHide') this.onHide && this.onHide(true);
