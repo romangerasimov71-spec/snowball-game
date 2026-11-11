@@ -2,6 +2,8 @@
 'use strict';
 
 // ---------- Константы и данные ----------
+// Канал поддержки (требование ВК): сообщество «Уютные игры». Строка в паузе — только в VK/OK; пусто — скрыта.
+const SUPPORT = 'vk.com/club243202759';
 const BASE_W = 480, BASE_H = 820, MAX_LANE = 720;
 const MIN_R = 9;          // меньше — ком растаял/разбился
 const START_R = 20;       // 20 единиц = 40 см в диаметре
@@ -1638,6 +1640,11 @@ function applyTexts() {
   document.title = t('title');
   $('freeCoinsBtn').textContent = t('freeCoins', { n: 50 });
   $('freeCoinsBtn').style.display = YSDK.rewardedSupported() ? '' : 'none';
+  // Только в VK/OK: на Playgama и Яндексе адрес сообщества ВК не показываем (там нельзя упоминать другие площадки)
+  const showSup = !!SUPPORT && (YSDK.platform === 'vk' || YSDK.platform === 'ok');
+  const sup = $('supportLine');
+  sup.hidden = !showSup;
+  sup.textContent = showSup ? t('support') + ': ' + SUPPORT : '';
 }
 
 // Карта уровней: группы по локациям, звёзды, замки на непройденных

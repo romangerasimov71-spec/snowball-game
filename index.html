@@ -181,6 +181,7 @@
   .day.big { grid-column: span 2; }
   #shareImg { height: min(42vh, 360px); aspect-ratio: 9 / 16; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.4); max-width: 100%; object-fit: cover; }
   .stat.hint { font-size: 16px; color: #cfe6ff; }
+  .stat.support { font-size: 14px; color: #cfe6ff; opacity: .75; margin-top: 6px; user-select: text; -webkit-user-select: text; }
   .newSkin canvas { width: 56px; height: 56px; }
   .btn.toggle.off { opacity: .45; text-decoration: line-through; }
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
@@ -262,6 +263,7 @@
     <button class="btn ghost toggle" id="pSndBtn"><span class="ic"></span> <span data-t="sound"></span></button>
     <button class="btn ghost toggle" id="pMusBtn"><span class="ic"></span> <span data-t="music"></span></button>
   </div>
+  <div class="stat support" id="supportLine" hidden></div>
 </div>
 
 <div class="screen" id="revive">
