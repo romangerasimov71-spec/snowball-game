@@ -2,8 +2,9 @@
 'use strict';
 
 // ---------- Константы и данные ----------
-// Канал поддержки (требование ВК): сообщество «Уютные игры». Строка в паузе — только в VK/OK; пусто — скрыта.
-const SUPPORT = 'vk.com/club243202759';
+// Канал поддержки (требование ВК): группа студии «Уютные игры». Строка в паузе — только в VK/OK; пусто — скрыта.
+// В ОК — только группа ОК (ни vk.com, ни «ВКонтакте» — риск отказа ОК), во ВК — сообщество ВК.
+const SUPPORT = { vk: 'vk.com/club243202759', ok: 'ok.ru/group/70000061487179' };
 const BASE_W = 480, BASE_H = 820, MAX_LANE = 720;
 const MIN_R = 9;          // меньше — ком растаял/разбился
 const START_R = 20;       // 20 единиц = 40 см в диаметре
@@ -1641,10 +1642,11 @@ function applyTexts() {
   $('freeCoinsBtn').textContent = t('freeCoins', { n: 50 });
   $('freeCoinsBtn').style.display = YSDK.rewardedSupported() ? '' : 'none';
   // Только в VK/OK: на Playgama и Яндексе адрес сообщества ВК не показываем (там нельзя упоминать другие площадки)
-  const showSup = !!SUPPORT && (YSDK.platform === 'vk' || YSDK.platform === 'ok');
+  const supText = YSDK.platform === 'ok' ? SUPPORT.ok : YSDK.platform === 'vk' ? SUPPORT.vk : '';
+  const showSup = !!supText;
   const sup = $('supportLine');
   sup.hidden = !showSup;
-  sup.textContent = showSup ? t('support') + ': ' + SUPPORT : '';
+  sup.textContent = showSup ? t('support') + ': ' + supText : '';
 }
 
 // Карта уровней: группы по локациям, звёзды, замки на непройденных
