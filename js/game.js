@@ -2047,6 +2047,8 @@ window.SBGame = {
   // свернули — пауза и тишина (как VKWebAppViewHide); развернули — звук возвращается, пауза остаётся
   appPause: on => { if (YSDK.onHide) YSDK.onHide(!!on); },
   debug: () => ({ mode: S.mode, platform: YSDK.platform, silent: !!(Sfx.hidden || Sfx.adMuted), coins: save.coins, level: save.level }),
+  // для автопроверок и скриншотов карточек (бот-рулевой в tools/capture-rustore.js)
+  peek: () => ({ ball, objs, smashK: SMASH_K, z: S.z }),
 };
 
 boot();

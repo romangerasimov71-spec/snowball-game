@@ -1,0 +1,34 @@
+# Снежный Ком (snowball-game) — правила для Claude
+
+Игра студии Романа. Правила работы студии — в `romangerasimov71-spec/game-studio` (`CLAUDE.md`). Как устроена игра,
+площадки и сборка — в `README.md`. Общаемся с Романом по-русски, просто.
+
+- VK/OK открывают игру с GitHub Pages (ветка `gh-pages` = распакованный `dist/snowball-vk.zip` после `./build.sh`).
+  Пока игра на модерации ВК+ОК, gh-pages не обновлять без «да» Романа (13 ноя: «выложить после одобрения»).
+
+## Android / RuStore
+- Android-приложение — WebView с VK-сборкой (`dist/snowball-vk.zip`, распакована в assets) — `android/`, пакет
+  `ru.german71.snowball`, minSdk 24, targetSdk 35, портрет и альбом, без разрешений (даже без INTERNET). Схема та же,
+  что у «Новогодней сортировки» (`ornament-sort/android`). versionName — `GAME_VERSION` в `js/game.js` (блок «Android-
+  приложение» в конце файла; поднимать к каждой новой загрузке), versionCode — поле `versionCode` при запуске сборки
+  (для каждой новой загрузки в RuStore +1).
+- Признак приложения — `SnowballAndroid/<версия>` в user agent (`IS_ANDROID_APP` в `js/sdk.js`, `YSDK.platform = 'android'`):
+  SDK площадок не грузятся и не вызываются (ни VK Bridge, ни `/sdk.js` Яндекса), рекламы нет (межстраничная и «за награду»
+  сразу отвечают «нет»), баннера нет, нет «Пригласить», «Поделиться», избранного, строки «Поддержка и новинки: vk.com/…»
+  и ссылок наружу; язык — по телефону; сохранение — localStorage (ключ `snowball_save`).
+- Бонусы за рекламу в приложении **скрыты** (решение сборщика 16 ноя, как в Сортировке и как на Playgama без рекламы —
+  тот же путь `rewardedSupported() = false`): нет «второго шанса» после проигрыша, «×2 монеты», «×2» подарка дня,
+  «+50 монет» и «бесплатно за рекламу» у скинов. Монеты — только за игру и подарок дня; баланс цен не меняли.
+- «Назад» Android — `SBGame.back()`: в забеге — пауза, на паузе — продолжить, магазин/уровни/итог/победа — в меню,
+  подарок дня — забрать; в меню — `false`, приложение закрывается. Свернули — `SBGame.appPause(true)` (пауза и тишина,
+  как `VKWebAppViewHide`), вернулись — звук обратно, пауза до нажатия. `SBGame.debug()/peek()` — для автопроверок.
+- В ВК/ОК/Playgama/Яндексе и в браузере признака нет — всё как было (контроль ВК — в конце `tests/android.js`).
+- Проверка режима приложения: `tests/android.js` (как запускать — в начале файла).
+- **APK собирается не здесь**, а в `romangerasimov71-spec/ornament-sort` (там секреты подписи, ключ один на все игры студии):
+  Actions → «Android APK (other games)» → game = `snowball-game` (или `gh api -X POST
+  repos/romangerasimov71-spec/ornament-sort/actions/workflows/android-other.yml/dispatches -f ref=main -f 'inputs[game]=snowball-game'`).
+  Он берёт `main` этого репозитория, `./build.sh`, распаковывает `dist/snowball-vk.zip` в `android/app/src/main/assets/www/`
+  (в git её нет) и собирает. Готовый APK — в ветке `rustore-build` репозитория `ornament-sort`:
+  `apk/snowball-<версия>-release.apk`, `build-info-snowball-game.txt`, `apk/SHA256.txt`.
+- Иконки: `python3 android/tools/make_icons.py` (из `vk-assets/icon-576.png`). Карточка RuStore — `release/rustore/`
+  (тексты `texts.md`, иконка 512, скриншоты 1080×1920 — `tools/capture-rustore.js`, забеги ведёт бот-рулевой).
