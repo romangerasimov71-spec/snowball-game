@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="night_sky">#0D2340</color>
+    <!-- full screen, no title; the window is the night-sky color so there is no white flash before the game draws -->
+    <style name="Theme.Snowball" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/night_sky</item>
+        <item name="android:statusBarColor">@color/night_sky</item>
+        <item name="android:navigationBarColor">@color/night_sky</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

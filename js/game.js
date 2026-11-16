@@ -2026,6 +2026,29 @@ async function boot() {
   requestAnimationFrame(loop);
 }
 
+// ---------- Android-приложение: кнопка «Назад» и сворачивание ----------
+// Версия игры: из неё берётся versionName Android-приложения (RuStore). Поднимать к каждой новой сборке для площадок.
+const GAME_VERSION = '1.0.0';
+// «Назад»: игра — пауза; пауза — продолжить; экраны — в меню; подарок дня — забрать; false — открыто меню, приложение выходит
+function appBack() {
+  switch (S.mode) {
+    case 'play': pauseGame(); return true;
+    case 'pause': resumeGame(); return true;
+    case 'revive': finishRun(); return true;
+    case 'daily': claimDaily(1); return true;
+    case 'share': setMode(S.shareFrom || 'menu'); return true;
+    case 'over': case 'win': case 'shop': case 'levels': refreshMenu(); setMode('menu'); return true;
+    default: return false;
+  }
+}
+window.SBGame = {
+  version: GAME_VERSION,
+  back: appBack,
+  // свернули — пауза и тишина (как VKWebAppViewHide); развернули — звук возвращается, пауза остаётся
+  appPause: on => { if (YSDK.onHide) YSDK.onHide(!!on); },
+  debug: () => ({ mode: S.mode, platform: YSDK.platform, silent: !!(Sfx.hidden || Sfx.adMuted), coins: save.coins, level: save.level }),
+};
+
 boot();
 
 // Для отладки и автотестов

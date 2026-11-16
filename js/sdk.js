@@ -1,5 +1,11 @@
 // Обёртка над Yandex Games SDK v2. Локально (без /sdk.js) работает в режиме заглушки,
 // чтобы игру можно было разрабатывать и тестировать в обычном браузере.
+// Android-приложение (RuStore): WebView дописывает «SnowballAndroid/<версия>» к user agent.
+// Там нет SDK площадок, рекламы (ни межстраничной, ни за награду — кнопки «за рекламу» скрыты),
+// баннера, социальных функций, строки поддержки и ссылок наружу; сохранение — localStorage WebView.
+// В VK/OK/Playgama/Яндексе и в браузере признака нет — всё как было.
+const IS_ANDROID_APP = /SnowballAndroid\//.test((window.navigator && navigator.userAgent) || '');
+
 const YSDK = {
   sdk: null,
   player: null,
@@ -21,6 +27,14 @@ const YSDK = {
   },
 
   async init() {
+    if (IS_ANDROID_APP) {
+      this.platform = 'android';
+      this.showFullscreen = () => Promise.resolve(false);
+      this.showRewarded = () => Promise.resolve(false);
+      this.rewardedSupported = () => false;
+      this.bannerModes = [];
+      return;
+    }
     // Playgama: Bridge инициализируется первым, до всего остального
     if (window.IS_PLAYGAMA && window.bridge && typeof PlaygamaPlatform !== 'undefined') {
       Object.assign(this, PlaygamaPlatform);
