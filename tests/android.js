@@ -57,11 +57,8 @@ const dbg = page => page.evaluate(() => SBGame.debug());
   check('версия игры доступна (SBGame.version)', /^\d+\.\d+\.\d+$/.test(await page.evaluate(() => SBGame.version)));
   check('язык телефона ru → русский', (await page.textContent('#playBtn')).includes('Играть'));
 
-  // подарок дня: без «×2 за рекламу»; «Назад» забирает подарок
-  check('подарок дня открыт', d.mode === 'daily');
-  check('нет «×2» за рекламу в подарке', !(await vis(page, 'dailyX2')));
-  const c0 = d.coins;
-  check('back() забирает подарок и открывает меню', (await page.evaluate(() => SBGame.back())) === true && (d = await dbg(page)).mode === 'menu' && d.coins === c0 + 50, JSON.stringify(d));
+  // первый запуск — сразу меню: подарок дня только со второго захода в меню (решение Романа 19.11)
+  check('первый запуск: сразу меню, без подарка дня', d.mode === 'menu', d.mode);
   check('нет «Пригласить»', !(await vis(page, 'inviteBtn')));
 
   // магазин: ни «+50 монет», ни «бесплатно за рекламу» у скинов
@@ -94,6 +91,12 @@ const dbg = page => page.evaluate(() => SBGame.debug());
   await page.evaluate(() => SBGame.back()); // продолжить
   await page.evaluate(() => { document.querySelector('#pauseBtn').click(); });
   await page.click('#pauseMenuBtn'); await page.waitForTimeout(200);
+  // второй заход в меню — подарок дня: без «×2 за рекламу»; «Назад» забирает подарок
+  d = await dbg(page);
+  check('второй заход в меню: подарок дня открыт', d.mode === 'daily', d.mode);
+  check('нет «×2» за рекламу в подарке', !(await vis(page, 'dailyX2')));
+  const c0 = d.coins;
+  check('back() забирает подарок и открывает меню', (await page.evaluate(() => SBGame.back())) === true && (d = await dbg(page)).mode === 'menu' && d.coins === c0 + 50, JSON.stringify(d));
   await page.click('#endlessBtn'); await page.waitForTimeout(300);
   const tEnd = Date.now() + 150000;
   let modes = new Set();
@@ -129,6 +132,13 @@ const dbg = page => page.evaluate(() => SBGame.debug());
   d = await dbg(vk.page);
   check('ВК (без признака): площадка vk', d.platform === 'vk', d.platform);
   check('ВК: мост вызван (VKWebAppInit)', (await vk.page.evaluate(() => window.__vkCalls.some(c => c.startsWith('VKWebAppInit')))));
+  check('ВК: первый запуск — меню без подарка дня', d.mode === 'menu', d.mode);
+  // первый забег и выход в меню — подарок дня с «×2» за рекламу
+  await vk.page.click('#playBtn'); await vk.page.waitForTimeout(400);
+  await vk.page.evaluate(() => document.querySelector('#pauseBtn').click());
+  await vk.page.click('#pauseMenuBtn'); await vk.page.waitForTimeout(200);
+  d = await dbg(vk.page);
+  check('ВК: второй заход в меню — подарок дня', d.mode === 'daily', d.mode);
   if (d.mode === 'daily') check('ВК: «×2» за рекламу в подарке есть', await vis(vk.page, 'dailyX2'));
   await vk.page.evaluate(() => SBGame.back());
   await vk.page.click('#shopBtn'); await vk.page.waitForTimeout(200);

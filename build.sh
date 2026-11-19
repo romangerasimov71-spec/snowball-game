@@ -23,7 +23,7 @@ build() {
   sed "${sed_args[@]}" -e '/<!-- [a-z]*:\(start\|end\) -->/d' index.html > "$dir/index.html"
 
   # Общий код + код только своей платформы
-  cp js/i18n.js js/audio.js js/sdk.js js/game.js "$dir/js/"
+  cp js/i18n.js js/audio.js js/analytics.js js/sdk.js js/game.js "$dir/js/"
   # Звуковые эффекты (Kenney, CC0) и фоновая музыка (3xBlast, CC0) — во всех сборках
   mkdir -p "$dir/assets/sfx" "$dir/assets/music"
   cp assets/sfx/*.ogg assets/sfx/*.mp3 "$dir/assets/sfx/"

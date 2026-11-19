@@ -71,6 +71,7 @@
   .sub { font-size: 18px; color: #cfe6ff; margin-bottom: 8px; }
   .stat { font-size: 20px; color: #e6f2ff; }
   .stat b { color: #ffd34d; }
+  .stat.bonus { color: #ffd34d; font-weight: bold; }
 
   .btn {
     min-width: 230px; padding: 14px 26px; border: 0; border-radius: 18px;
@@ -197,7 +198,7 @@
   .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
 
   #toast.low { top: auto; bottom: calc(90px + env(safe-area-inset-bottom)); }
-  #toast { white-space: pre-line;
+  #toast { white-space: pre-line; pointer-events: none;
     position: fixed; left: 50%; top: 10%; transform: translateX(-50%); z-index: 10;
     background: rgba(13,35,64,.85); padding: 12px 20px; border-radius: 14px; font-size: 20px;
     font-weight: bold; display: none; text-align: center; max-width: 90%;
@@ -300,10 +301,12 @@
   <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
   <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
   <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
+  <div class="stat bonus" id="winBonus" hidden></div>
   <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
   <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
   <div class="stat hint" id="winHint" hidden></div>
   <button class="btn green big" id="winNext"></button>
+  <button class="btn gold" id="winShop" hidden></button>
   <button class="btn" id="winRetry" hidden></button>
   <button class="btn gold" id="winFav" hidden></button>
   <div class="row" id="winSocial" hidden>
@@ -335,6 +338,7 @@
 
 <script src="js/i18n.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/analytics.js"></script>
 <script src="js/sdk.js"></script>
 <script src="js/game.js"></script>
 </body>

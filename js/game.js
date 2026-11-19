@@ -41,14 +41,20 @@ let save = {
 };
 
 // Параметры уровня. Цели по размеру подобраны симуляцией бота (см. README).
+// Мягкий старт (Роман 19.11): уровни 1–3 короче и щедрее, с 4-го всё как было.
+// ease: 1 — уровень 1, 0.6 — уровень 2, 0.3 — уровень 3, дальше 0.
+const EASE = { 1: 1, 2: 0.6, 3: 0.3 };
+// Цели по звёздам уровней 1–2 подобраны симуляцией (tests/start.js): обычный игрок — 2 звезды, точный — 3
+const EASY_GROW = { 1: [2.7, 4.2], 2: [2.8, 5.0] };
 function levelCfg(n) {
-  const dur = Math.min(38 + n * 2, 70);              // секунды до финиша
+  const ease = EASE[n] || 0;
+  const dur = Math.min(38 + n * 2, 70) - ease * 14;  // секунды до финиша (ур. 1 — ~26 с)
   const speed = Math.min(300 + n * 6, 430);          // экранная скорость
   const hard = clamp(n / 25, 0, 1);
-  const grow2 = 3.5 + Math.min(n, 30) * 0.17;        // во сколько раз вырасти для 2 звёзд
-  const grow3 = 7 + Math.min(n, 30) * 0.35;          // ... для 3 звёзд
+  const grow2 = EASY_GROW[n] ? EASY_GROW[n][0] : 3.5 + Math.min(n, 30) * 0.17;   // во сколько раз вырасти для 2 звёзд
+  const grow3 = EASY_GROW[n] ? EASY_GROW[n][1] : 7 + Math.min(n, 30) * 0.35;     // ... для 3 звёзд
   return {
-    n, dur, speed, hard, len: dur * speed,
+    n, dur, speed, hard, ease, len: dur * speed,
     boss: n % 5 === 0,
     zone: zoneFor(n),
     r2: START_R * grow2, r3: START_R * grow3,
@@ -77,6 +83,42 @@ const ZONES = [
 ];
 const zoneIndex = n => Math.floor((n - 1) / 5) % ZONES.length;
 const zoneFor = n => ZONES[zoneIndex(n)];
+
+// ---------- Отметки для статистики (js/analytics.js, список — docs/analytics.md) ----------
+// Без модуля или без Bridge — молча ничего не делает.
+const GA = {
+  event(n, d) { try { if (window.GameAnalytics) GameAnalytics.event(n, d); } catch (e) {} },
+  once(n, d) { try { if (window.GameAnalytics) GameAnalytics.once(n, d); } catch (e) {} },
+  frame(ts, active) { try { if (window.GameAnalytics) GameAnalytics.frame(ts, active); } catch (e) {} },
+};
+const attempts = {};   // попытки на уровне с момента запуска игры
+function runFields() {
+  const f = S.run === 'level' ? { level_id: String(S.cfg.n), step_index: S.cfg.n } : { level_id: 'endless' };
+  f.mode = S.run;
+  f.attempt = S.attempt || 1;
+  return f;
+}
+function trackStart(run, source) {
+  const key = run === 'level' ? S.cfg.n : 'endless';
+  attempts[key] = Math.min(20, (attempts[key] || 0) + 1);
+  S.attempt = attempts[key];
+  S.tracked = true;
+  GA.event('progression_started', { ...runFields(), source });
+}
+// reason: melt | crash | boss | quit
+function trackFail(reason) {
+  if (!S.tracked) return;
+  S.tracked = false;
+  const d = { ...runFields(), reason, duration_sec: Math.round(S.t), revived: !!S.revived };
+  if (S.run === 'level') d.progress_pct = Math.round(clamp(S.dist / S.cfg.len, 0, 1) * 10) * 10;
+  else d.score = Math.floor(S.score);
+  GA.event('progression_failed', d);
+}
+function trackWin(stars, firstClear, bossWin) {
+  if (!S.tracked) return;
+  S.tracked = false;
+  GA.event('progression_completed', { ...runFields(), stars, first_clear: firstClear, boss: !!bossWin, duration_sec: Math.round(S.t), revived: !!S.revived });
+}
 
 // ---------- Векторные иконки интерфейса (вместо эмодзи) ----------
 const SVG = (body, extra = '') => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${extra}>${body}</svg>`;
@@ -160,7 +202,19 @@ window.addEventListener('keydown', e => {
     if (S.mode === 'play') pauseGame(); else if (S.mode === 'pause') resumeGame();
   }
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
+  if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) onSteer();
 });
+// Игрок впервые повёл ком в забеге: убираем руку-подсказку, отмечаем для статистики
+function onSteer() {
+  if (S.mode !== 'play' || S.steered) return;
+  S.steered = true;
+  if (S.tutor) {
+    S.tutor = false;
+    save.hinted = true; persist();
+    GA.once('tutorial_completed', { seconds: Math.round(S.t * 10) / 10 });
+    toast(t('hintSmash'), 2600, true);
+  }
+}
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 canvas.addEventListener('pointerdown', e => {
   pointerDown = true; lastPX = e.clientX;
@@ -171,6 +225,7 @@ window.addEventListener('pointermove', e => {
   const dx = (e.clientX - lastPX) / scale;
   lastPX = e.clientX;
   ball.targetX += dx * 1.25 / S.z;
+  if (Math.abs(dx) > 0.5) onSteer();
 });
 window.addEventListener('pointerup', () => { pointerDown = false; });
 window.addEventListener('pointercancel', () => { pointerDown = false; });
@@ -243,11 +298,13 @@ function add(type, x, y, size, extra = {}) {
 function hardness() {
   return S.run === 'level' ? S.cfg.hard : clamp(S.t / 120, 0, 1);
 }
+// Насколько щедрый сейчас забег (мягкий старт уровней 1–3; в бесконечном режиме 0)
+const easeNow = () => S.run === 'level' ? S.cfg.ease || 0 : 0;
 
 function obstacleSize() {
   // Часть препятствий меньше кома (можно снести), часть — больше (объезжай).
   const h = hardness();
-  const k = Math.random() < 0.6 - h * 0.15 ? rand(0.45, 0.95) : rand(1.15, 1.7 + h * 0.3);
+  const k = Math.random() < 0.6 - h * 0.15 + easeNow() * 0.15 ? rand(0.45, 0.95) : rand(1.15, 1.7 + h * 0.3);
   return Math.max(10, ball.r * k);
 }
 
@@ -267,13 +324,14 @@ function spawnRow() {
   const z = S.z, hw = halfW(), m = 40 / z;
   const y = (H - BALL_SY + 120) / z;
   const rx = () => rand(-hw + m, hw - m);
-  const h = hardness();
+  const h = hardness(), e = easeNow();
   const roll = Math.random();
+  const snowT = 0.30 + e * 0.08;          // мягкий старт: больше снега, меньше рядов препятствий
 
-  if (roll < 0.30) {
+  if (roll < snowT) {
     const n = 1 + (Math.random() * 3 | 0);
     for (let i = 0; i < n; i++) add('snow', rx(), y + rand(0, 80) / z, rand(14, 22) / z);
-  } else if (roll < 0.50) {
+  } else if (roll < snowT + 0.20) {
     const x = rand(-hw + m * 2, hw - m * 2);
     const curve = rand(-1, 1) * 60 / z;
     for (let i = 0; i < 6; i++) add('coin', x + Math.sin(i / 5 * Math.PI) * curve, y + i * 50 / z, 17 / z);
@@ -281,7 +339,7 @@ function spawnRow() {
     const n = 1 + (Math.random() < 0.35 + h * 0.4 ? 1 : 0) + (Math.random() < h * 0.3 ? 1 : 0);
     for (let i = 0; i < n; i++) {
       // Иногда вместо обычного препятствия — человек (пока ком не стал гигантским)
-      if (Math.random() < 0.22) {
+      if (Math.random() < 0.22 * (1 - e * 0.5)) {
         const type = pick(curZone().people);
         if (ball.r < PEOPLE[type] * 8) { add(type, rx(), y + rand(0, 100) / z, PEOPLE[type]); continue; }
       }
@@ -292,7 +350,7 @@ function spawnRow() {
     if (Math.random() < 0.5) add('snow', rx(), y + rand(120, 180) / z, rand(14, 20) / z);
     if (Math.random() < 0.4) add('coin', rx(), y + rand(-40, 160) / z, 17 / z);
   } else if (roll < 0.95) {
-    if (S.t > 12) add('fire', rx(), y, rand(26, 34) / z);
+    if (S.t > 12 && e < 1) add('fire', rx(), y, rand(26, 34) / z);   // на 1-м уровне костров нет
     else add('snow', rx(), y, 18 / z);
   } else {
     add(Math.random() < 0.5 ? 'magnet' : 'shield', rx(), y, 18 / z);
@@ -301,7 +359,7 @@ function spawnRow() {
 }
 
 // ---------- Управление забегом ----------
-function startRun(run, level) {
+function startRun(run, level, source = 'play') {
   Sfx.init(); Sfx.resume();
   S.run = run;
   if (run === 'level') S.cfg = levelCfg(level || save.level);
@@ -314,12 +372,16 @@ function startRun(run, level) {
   const r0 = START_R + save.up.size * 3;
   Object.assign(ball, { x: 0, targetX: 0, r: r0, vx: 0, rot: 0, tilt: 0, inv: 1, magnet: 0, shield: 0 });
   S.maxR = r0;
-  for (let i = 0; i < 4; i++) add('snow', rand(-80, 80), (H * 0.3 + i * 140), 18);
+  // Стартовый снег — прямо по ходу кома: ком растёт в первые секунды, даже если игрок ещё не понял управление
+  for (let i = 0; i < 5; i++) add('snow', rand(-8, 8), 150 + i * 110, 18);
   setMode('play');
   $('hudLevel').textContent = run === 'level' ? t('levelN', { n: S.cfg.n }) : '';
-  if (!save.hinted) {
-    save.hinted = true; persist();
-    toast(t('hint'), 4500);
+  trackStart(run, source);
+  // Подсказка «тяни пальцем»: рука у кома и короткий текст внизу, пока игрок не начнёт управлять
+  S.tutor = !save.hinted;
+  S.steered = false;
+  if (S.tutor) {
+    toast(t('hintDrag'), 600000, true);
   } else if (run === 'level' && S.cfg.boss) {
     toast(t('bossLevel', { b: t('boss_' + S.cfg.zone.boss), s: meters(S.cfg.bossR * SMASH_K) }), 3000);
   } else if (run === 'level' && S.cfg.n % 5 === 1) {
@@ -391,6 +453,8 @@ async function doRevive() {
 // Забег окончен неудачей (или выход в меню).
 function finishRun() {
   clearInterval(reviveInt);
+  trackFail(S.deathReason);
+  hideTutor();
   save.coins += S.coins;
   save.games++;
   const score = Math.floor(S.score);
@@ -433,14 +497,27 @@ function levelComplete(bossWin) {
   let newSkin = null;
   if (bossWin && c.n <= 25) {
     const sk = SKINS.find(k => k.zone === zoneIndex(c.n));
-    if (sk && !save.owned.includes(sk.id)) { save.owned.push(sk.id); newSkin = sk; }
+    if (sk && !save.owned.includes(sk.id)) { save.owned.push(sk.id); newSkin = sk; GA.event('skin_unlocked', { skin_id: sk.id, how: 'zone' }); }
   }
   save.coins += S.reward;
+  // Подарок за первую победу (Роман 19.11): монет сразу хватает на первый скин «Лёд»
+  const iceSkin = SKINS.find(k => k.id === 'ice');
+  let firstBonus = 0;
+  if (!(save.wins > 0) && save.level <= 1 && !save.owned.includes(iceSkin.id)) firstBonus = Math.max(0, iceSkin.price - save.coins);
+  save.coins += firstBonus;
   save.stars[c.n] = Math.max(save.stars[c.n] || 0, stars);
   if (c.n >= save.level) save.level = c.n + 1;
   save.games++;
   save.wins = (save.wins || 0) + 1;
   persist();
+  hideTutor();
+  trackWin(stars, firstClear, bossWin);
+  $('winBonus').hidden = !firstBonus;
+  $('winBonus').textContent = firstBonus ? t('firstWinBonus', { n: firstBonus }) : '';
+  // Первая победа: подсказка «Хватает на скин «Лёд» — открой в магазине»
+  const showShop = save.wins === 1 && save.coins >= iceSkin.price && !save.owned.includes(iceSkin.id);
+  $('winShop').hidden = !showShop;
+  if (showShop) $('winShop').textContent = t('winShop', { s: t('sk_ice') });
   Sfx.win();
   S.shareInfo = { level: c.n, stars, size: r };
   $('winSocial').hidden = !(YSDK.can('invite') || canShare());
@@ -515,7 +592,7 @@ function hitObstacle(o) {
   S.shake = 16; S.flash = 0.35;
   S.combo = 0;
   burst(ball.x, ball.y, 22, '#fff', 340);
-  ball.r *= 0.62;
+  ball.r *= 0.62 + easeNow() * 0.13;   // мягкий старт: на 1-м уровне удар оставляет ~75 %
   ball.inv = 1.2;
   const push = ball.x < o.x ? -1 : 1;
   ball.targetX = ball.x + push * (o.r + ball.r + 40 / S.z);
@@ -548,7 +625,7 @@ function update(dt) {
   ball.tilt = clamp((ball.x - prevX) * z / dt / 900, -0.35, 0.35);
 
   // Таяние: ком постоянно уменьшается, нужно собирать снег
-  ball.r -= (0.3 + ball.r * (0.011 + h * 0.006)) * dt;
+  ball.r -= (0.3 + ball.r * (0.011 + h * 0.006)) * (1 - easeNow() * 0.2) * dt;
   if (ball.r < MIN_R) { die('melt'); return; }
   S.maxR = Math.max(S.maxR, ball.r);
 
@@ -1557,6 +1634,7 @@ function render() {
     ctx.fillStyle = tx.color; ctx.fillText(tx.str, tx.x, tx.y);
   }
   ctx.globalAlpha = 1;
+  if (S.tutor && S.mode === 'play') drawTutorHand();
   ctx.restore();
 
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -1567,6 +1645,48 @@ function render() {
   v.addColorStop(0, 'rgba(30,70,140,0)'); v.addColorStop(1, 'rgba(30,70,140,0.25)');
   ctx.fillStyle = v; ctx.fillRect(-20, -20, FW + 40, H + 40);
   if (S.flash > 0) { ctx.fillStyle = `rgba(255,80,80,${S.flash * 0.6})`; ctx.fillRect(-20, -20, FW + 40, H + 40); }
+}
+
+// Подсказка первого забега: мигающая рука качается влево-вправо под комом, по бокам — стрелки
+function drawTutorHand() {
+  const tm = performance.now() / 1000;
+  const [bx, by] = w2s(ball.x, 0);
+  const br = ball.r * S.z;
+  const swing = Math.sin(tm * 3.2);
+  const k = clamp(0.75 / scale, 1, 1.7);   // на низком экране (альбом) мир мелкий — рука крупнее
+  const hx = bx + swing * 64 * k, hy = by + br + 58 * k;
+  ctx.save();
+  // стрелки ← → у кома
+  ctx.globalAlpha = 0.55 + 0.35 * Math.abs(Math.sin(tm * 3.2));
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = 'rgba(13,35,64,0.85)'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  for (const dir of [-1, 1]) {
+    const ax = bx + dir * (br + 34 * k), ay = by;
+    ctx.save(); ctx.translate(ax, ay); ctx.scale(k, k); ctx.translate(-ax, -ay);
+    ctx.beginPath();
+    ctx.moveTo(ax + dir * 18, ay); ctx.lineTo(ax, ay - 14); ctx.lineTo(ax, ay - 6); ctx.lineTo(ax - dir * 14, ay - 6);
+    ctx.lineTo(ax - dir * 14, ay + 6); ctx.lineTo(ax, ay + 6); ctx.lineTo(ax, ay + 14); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  // рука: ладонь и вытянутый вверх указательный палец, мигает
+  ctx.globalAlpha = 0.75 + 0.25 * Math.sin(tm * 6.4);
+  ctx.translate(hx, hy);
+  ctx.scale(k, k);
+  ctx.rotate(swing * 0.18);
+  ctx.fillStyle = 'rgba(13,35,64,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, -30, 14 + 4 * Math.abs(swing), 5, 0, 0, Math.PI * 2); ctx.fill();   // «касание»
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#0d2340'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-6, -24); ctx.arcTo(-6, -32, 0, -32, 6); ctx.arcTo(6, -32, 6, -24, 6);   // кончик пальца
+  ctx.lineTo(6, -4);
+  ctx.quadraticCurveTo(10, -9, 14, -6); ctx.quadraticCurveTo(18, -8, 21, -3);         // костяшки
+  ctx.quadraticCurveTo(26, -4, 26, 4);
+  ctx.lineTo(25, 18); ctx.quadraticCurveTo(22, 30, 8, 31); ctx.lineTo(-4, 31);
+  ctx.quadraticCurveTo(-14, 30, -17, 20);
+  ctx.lineTo(-22, 4); ctx.quadraticCurveTo(-23, -2, -17, -1); ctx.lineTo(-6, 8);       // большой палец
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
 }
 
 function updateFlakes(dt) {
@@ -1602,6 +1722,7 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  GA.frame(now, S.mode === 'play');
   if (S.mode === 'play') update(dt);
   else if (S.mode === 'menu' || S.mode === 'shop' || S.mode === 'levels' || S.mode === 'daily') menuUpdate(dt);
   else if (S.mode !== 'pause') updateParts(dt, 0);
@@ -1678,7 +1799,7 @@ function renderLevels() {
       stars.textContent = locked ? '' : '★'.repeat(k) + '☆'.repeat(3 - k);
       b.append(num, stars);
       b.disabled = locked;
-      if (!locked) b.onclick = () => { Sfx.init(); Sfx.resume(); playWithAd('level', n); };
+      if (!locked) b.onclick = () => { Sfx.init(); Sfx.resume(); playWithAd('level', n, 'level_select'); };
       if (n === save.level) current = box;
       row.append(b);
     }
@@ -1712,6 +1833,7 @@ function renderShop() {
         if (!owned) {
           if (sk.zone != null || save.coins < sk.price) return;
           save.coins -= sk.price; save.owned.push(sk.id); Sfx.buy();
+          GA.event('skin_unlocked', { skin_id: sk.id, how: 'coins' });
         } else Sfx.click();
         save.skin = sk.id; persist(); refreshMenu(); renderShop();
       };
@@ -1730,6 +1852,7 @@ function renderShop() {
           save.skinAds[sk.id] = (save.skinAds[sk.id] || 0) + 1;
           if (save.skinAds[sk.id] >= need) {
             save.owned.push(sk.id); save.skin = sk.id; Sfx.buy(); toast(t('skinUnlocked'));
+            GA.event('skin_unlocked', { skin_id: sk.id, how: 'ads' });
           } else Sfx.coin();
           persist(); refreshMenu(); renderShop();
         };
@@ -1764,15 +1887,33 @@ function bind(id, fn) {
 }
 
 let starting = false;
-async function playWithAd(run, level) {
+// Межстраничная реклама (Роман 19.11): не раньше конца 2-го уровня, а если игрок застрял —
+// после 4 забегов. Первое «Играть» — всегда без рекламы, на всех площадках.
+const ADS_AFTER_LEVEL = 3, ADS_AFTER_GAMES = 4;
+const interstitialAllowed = () => save.level >= ADS_AFTER_LEVEL || save.games >= ADS_AFTER_GAMES;
+async function playWithAd(run, level, source) {
   if (starting) return;
   starting = true;
   Sfx.click();
-  // Полноэкранная реклама — только между забегами, не чаще раза в ~минуту.
-  if (save.games > 0 || YSDK.platform === 'playgama') await YSDK.showFullscreen();
+  // Полноэкранная реклама — только между забегами; частоту дополнительно ограничивает площадка.
+  if (interstitialAllowed()) await YSDK.showFullscreen();
   starting = false;
   last = performance.now();
-  startRun(run, level);
+  startRun(run, level, source);
+}
+
+// В меню: подарок дня — только после хотя бы одного забега (сначала игра, решение Романа 19.11)
+function toMenu() { refreshMenu(); setMode('menu'); if (save.games > 0) checkDaily(); }
+
+function openShop(source) {
+  Sfx.click(); renderShop(); refreshMenu(); setMode('shop');
+  GA.event('shop_opened', { source });
+}
+
+function hideTutor() {
+  if (!S.tutor) return;
+  S.tutor = false;
+  $('toast').style.display = 'none';
 }
 
 async function doubleReward(btn, onDone) {
@@ -1788,22 +1929,29 @@ async function doubleReward(btn, onDone) {
 }
 
 function setupUI() {
-  bind('playBtn', () => playWithAd('level', save.level));
-  bind('endlessBtn', () => playWithAd('endless'));
-  bind('againBtn', () => playWithAd(S.run, S.cfg.n));
-  bind('winNext', () => playWithAd('level', S.nextLevel));
-  bind('winRetry', () => playWithAd('level', S.retryLevel));
+  bind('playBtn', () => playWithAd('level', save.level, 'play'));
+  bind('endlessBtn', () => playWithAd('endless', 0, 'endless'));
+  bind('againBtn', () => {
+    GA.event('retry_pressed', { ...runFields(), screen: 'over' });
+    playWithAd(S.run, S.cfg.n, 'again');
+  });
+  bind('winNext', () => playWithAd('level', S.nextLevel, 'next'));
+  bind('winRetry', () => {
+    GA.event('retry_pressed', { ...runFields(), screen: 'win' });
+    playWithAd('level', S.retryLevel, 'retry');
+  });
   bind('levelsBtn', () => { Sfx.click(); renderLevels(); setMode('levels'); });
-  bind('levelsBack', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
-  bind('winMenu', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
-  bind('shopBtn', () => { Sfx.click(); renderShop(); refreshMenu(); setMode('shop'); });
-  bind('shopBack', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
+  bind('levelsBack', () => { Sfx.click(); toMenu(); });
+  bind('winMenu', () => { Sfx.click(); toMenu(); });
+  bind('winShop', () => openShop('win_first'));
+  bind('shopBtn', () => openShop('menu'));
+  bind('shopBack', () => { Sfx.click(); toMenu(); });
   bind('tabSkins', () => { shopTab = 'skins'; Sfx.click(); renderShop(); });
   bind('tabUps', () => { shopTab = 'ups'; Sfx.click(); renderShop(); });
   bind('pauseBtn', () => { Sfx.click(); pauseGame(); });
   bind('resumeBtn', () => { Sfx.click(); resumeGame(); });
-  bind('pauseMenuBtn', () => { Sfx.click(); finishRun(); refreshMenu(); setMode('menu'); });
-  bind('overMenuBtn', () => { Sfx.click(); refreshMenu(); setMode('menu'); });
+  bind('pauseMenuBtn', () => { Sfx.click(); S.deathReason = 'quit'; finishRun(); toMenu(); });
+  bind('overMenuBtn', () => { Sfx.click(); toMenu(); });
   bind('reviveBtn', doRevive);
   bind('reviveSkip', () => { Sfx.click(); finishRun(); });
   bind('doubleBtn', () => doubleReward($('doubleBtn'), v => { $('overCoins').textContent = v; }));
@@ -2004,6 +2152,9 @@ const skinAdsNeeded = sk => Math.max(1, Math.ceil(sk.price / 600));
 // ---------- Запуск ----------
 async function boot() {
   await YSDK.init();
+  // Статистика — только через Playgama Bridge (в остальных сборках его нет, модуль молчит).
+  // __analyticsBridge — подставной Bridge для автопроверки tests/start.js.
+  try { if (window.GameAnalytics) GameAnalytics.init(window.bridge || window.__analyticsBridge || null, { gameVersion: GAME_VERSION, targetFps: 60 }); } catch (e) {}
   setLang(YSDK.lang());
   const loaded = await YSDK.load();
   if (loaded) {
@@ -2018,9 +2169,11 @@ async function boot() {
   bumps = Array.from({ length: 26 }, () => ({ x: rand(0, W), y: rand(0, H + 200), s: rand(10, 30) }));
   for (let i = 0; i < 8; i++) add(i % 3 ? 'tree' : 'rock', rand(-W / 2 + 30, W / 2 - 30), rand(-BALL_SY, H - BALL_SY), rand(25, 55));
   setMode('menu');
-  checkDaily();
+  // Ежедневная награда (Роман 19.11): не при самом первом запуске — сначала игра; со второго захода в меню
+  if (save.games > 0) checkDaily();
   $('loading').style.display = 'none';
   YSDK.loadingReady();
+  try { if (window.GameAnalytics) GameAnalytics.ready(); } catch (e) {}
   // Музыка — после старта игры, чтобы не задерживать загрузку
   setTimeout(() => Sfx.prefetchMusic(), 300);
   requestAnimationFrame(loop);
@@ -2028,7 +2181,7 @@ async function boot() {
 
 // ---------- Android-приложение: кнопка «Назад» и сворачивание ----------
 // Версия игры: из неё берётся versionName Android-приложения (RuStore). Поднимать к каждой новой сборке для площадок.
-const GAME_VERSION = '1.0.0';
+const GAME_VERSION = '1.0.1';
 // «Назад»: игра — пауза; пауза — продолжить; экраны — в меню; подарок дня — забрать; false — открыто меню, приложение выходит
 function appBack() {
   switch (S.mode) {
@@ -2037,7 +2190,7 @@ function appBack() {
     case 'revive': finishRun(); return true;
     case 'daily': claimDaily(1); return true;
     case 'share': setMode(S.shareFrom || 'menu'); return true;
-    case 'over': case 'win': case 'shop': case 'levels': refreshMenu(); setMode('menu'); return true;
+    case 'over': case 'win': case 'shop': case 'levels': toMenu(); return true;
     default: return false;
   }
 }
