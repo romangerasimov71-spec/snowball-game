@@ -65,7 +65,7 @@
      слева итоги, справа кнопки, «дальше» первой — видна целиком без прокрутки (Роман 19.11) */
   .screen > .col { display: contents; }
   @media (orientation: landscape) and (max-height: 500px) {
-    #win.show, #over.show { flex-direction: row; align-items: center; justify-content: center; gap: 24px;
+    #win.show, #over.show, #menu.show { flex-direction: row; align-items: center; justify-content: center; gap: 24px;
       padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
     .screen > .col { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
       flex: 0 1 380px; min-width: 0; max-height: 100%; }
@@ -79,6 +79,11 @@
     .col.btns .row { width: 100%; max-width: 340px; flex-wrap: nowrap; }
     .col.btns .row .btn { width: auto; flex: 1; }
     .newSkin canvas { width: 40px; height: 40px; }
+    /* меню: заголовок слева, кнопки справа, звук и музыка — внизу слева (под заголовком, не на кнопках) */
+    #menu h1 { font-size: 46px; }
+    #menu .col.btns { padding-top: 34px; }
+    #menu .col.btns .row { width: 100%; max-width: 340px; }
+    #menu .toggles { left: 16px; right: auto; bottom: max(10px, env(safe-area-inset-bottom)); }
   }
   @keyframes fade { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 
@@ -248,16 +253,20 @@
 
 <div class="screen" id="menu">
   <div class="pill topcoins" id="menuCoins">● 0</div>
-  <h1 data-t="title"></h1>
-  <div class="sub" data-t="subtitle"></div>
-  <div class="stat"><b id="menuStars">0</b> ★ &nbsp;·&nbsp; <span data-t="best"></span>: <b id="menuBest">0</b></div>
-  <button class="btn green big" id="playBtn" data-t="play"></button>
-  <div class="row">
-    <button class="btn half" id="levelsBtn" data-t="levels"></button>
-    <button class="btn half" id="shopBtn" data-t="shop"></button>
+  <div class="col info">
+    <h1 data-t="title"></h1>
+    <div class="sub" data-t="subtitle"></div>
+    <div class="stat"><b id="menuStars">0</b> ★ &nbsp;·&nbsp; <span data-t="best"></span>: <b id="menuBest">0</b></div>
   </div>
-  <button class="btn" id="endlessBtn" data-t="endless"></button>
-  <button class="btn social" id="inviteBtn" hidden><span data-t="invite"></span> <em class="badge" id="inviteBadge"></em></button>
+  <div class="col btns">
+    <button class="btn green big" id="playBtn" data-t="play"></button>
+    <div class="row">
+      <button class="btn half" id="levelsBtn" data-t="levels"></button>
+      <button class="btn half" id="shopBtn" data-t="shop"></button>
+    </div>
+    <button class="btn" id="endlessBtn" data-t="endless"></button>
+    <button class="btn social" id="inviteBtn" hidden><span data-t="invite"></span> <em class="badge" id="inviteBadge"></em></button>
+  </div>
   <div class="toggles">
     <button id="sndBtn" aria-label="sound"></button>
     <button id="musBtn" aria-label="music"></button>

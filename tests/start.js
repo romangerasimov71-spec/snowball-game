@@ -207,19 +207,25 @@ const tap = async (page, id) => { await page.click('#' + id); await page.waitFor
     await ctx.close();
   }
 
-  // ---------- 4. Альбом: кнопки «дальше» на победе и проигрыше видны целиком без прокрутки ----------
+  // ---------- 4. Альбом: меню и кнопки «дальше» на победе и проигрыше видны целиком без прокрутки ----------
   for (const vp of [{ width: 844, height: 390 }, { width: 740, height: 360 }]) {
     const tag = vp.width + '×' + vp.height;
     const { ctx, page } = await open(browser, vp);
     const fits = id => page.evaluate(id => {
       const e = document.getElementById(id), r = e.getBoundingClientRect();
-      return !e.hidden && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === e;
+      return !e.hidden && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight && e.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
     }, id);
     const win = async r => {
       await page.evaluate(r => { __game.S.dist = __game.S.cfg.len - 200; __game.ball.r = r; __game.ball.shield = 30; }, r);
       await page.waitForFunction(() => SBGame.debug().mode === 'win', null, { timeout: 15000 });
       await page.waitForTimeout(400);
     };
+    // меню: все кнопки на экране и ничем не закрыты (и «Пригласить», как во ВК/ОК)
+    const menuIds = ['playBtn', 'levelsBtn', 'shopBtn', 'endlessBtn', 'sndBtn', 'musBtn'];
+    check(`${tag}: меню — все кнопки видны целиком`, (await Promise.all(menuIds.map(fits))).every(Boolean));
+    await page.evaluate(() => { document.getElementById('inviteBtn').hidden = false; });
+    check(`${tag}: меню с «Пригласить» (ВК/ОК) — все кнопки видны целиком`, (await Promise.all([...menuIds, 'inviteBtn'].map(fits))).every(Boolean));
+    await page.evaluate(() => { document.getElementById('inviteBtn').hidden = true; });
     await tap(page, 'playBtn');
     await win(60);
     check(`${tag}: первая победа (с подарком) — «Уровень 2» видна целиком`, await fits('winNext'));
