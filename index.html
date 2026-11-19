@@ -61,6 +61,25 @@
     .toggles { bottom: 10px; }
   }
   .screen.show { display: flex; animation: fade .25s ease; }
+  /* Итог и победа: в портрете колонки «прозрачны» (порядок как раньше); в низком альбоме — две колонки:
+     слева итоги, справа кнопки, «дальше» первой — видна целиком без прокрутки (Роман 19.11) */
+  .screen > .col { display: contents; }
+  @media (orientation: landscape) and (max-height: 500px) {
+    #win.show, #over.show { flex-direction: row; align-items: center; justify-content: center; gap: 24px;
+      padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+    .screen > .col { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      flex: 0 1 380px; min-width: 0; max-height: 100%; }
+    .screen > .col.btns { gap: 7px; overflow-y: auto; justify-content: safe center; padding: 4px 0; }
+    .col.btns .next { order: -1; }
+    .col h2 { font-size: 30px; }
+    .col .stat { font-size: 17px; }
+    #winStars { font-size: 40px; }
+    .col.btns .btn { padding: 8px 18px; font-size: 17px; min-width: 0; width: 100%; max-width: 340px; }
+    .col.btns .btn.big { padding: 10px 24px; font-size: 24px; }
+    .col.btns .row { width: 100%; max-width: 340px; flex-wrap: nowrap; }
+    .col.btns .row .btn { width: auto; flex: 1; }
+    .newSkin canvas { width: 40px; height: 40px; }
+  }
   @keyframes fade { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 
   h1 {
@@ -285,35 +304,43 @@
 </div>
 
 <div class="screen" id="over">
-  <h2 id="overTitle"></h2>
-  <div class="stat" id="overScoreRow"><span data-t="score"></span>: <b id="overScore">0</b></div>
-  <div class="stat" id="overBestRow"><span data-t="best"></span>: <b id="overBest">0</b></div>
-  <div class="stat" id="overSizeRow"><span data-t="sizeLbl"></span>: <b id="overSize">0</b></div>
-  <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> <b>●</b></div>
-  <button class="btn gold ad" id="doubleBtn" data-t="doubleCoins"></button>
-  <button class="btn green big" id="againBtn" data-t="again"></button>
-  <button class="btn social" id="overShare" hidden><span data-t="share"></span> <em class="badge shareBadge"></em></button>
-  <button class="btn ghost" id="overMenuBtn" data-t="menu"></button>
+  <div class="col info">
+    <h2 id="overTitle"></h2>
+    <div class="stat" id="overScoreRow"><span data-t="score"></span>: <b id="overScore">0</b></div>
+    <div class="stat" id="overBestRow"><span data-t="best"></span>: <b id="overBest">0</b></div>
+    <div class="stat" id="overSizeRow"><span data-t="sizeLbl"></span>: <b id="overSize">0</b></div>
+    <div class="stat"><span data-t="earned"></span>: <b id="overCoins">0</b> <b>●</b></div>
+  </div>
+  <div class="col btns">
+    <button class="btn gold ad" id="doubleBtn" data-t="doubleCoins"></button>
+    <button class="btn green big next" id="againBtn" data-t="again"></button>
+    <button class="btn social" id="overShare" hidden><span data-t="share"></span> <em class="badge shareBadge"></em></button>
+    <button class="btn ghost" id="overMenuBtn" data-t="menu"></button>
+  </div>
 </div>
 
 <div class="screen" id="win">
-  <h2 id="winTitle"></h2>
-  <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
-  <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
-  <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
-  <div class="stat bonus" id="winBonus" hidden></div>
-  <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
-  <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
-  <div class="stat hint" id="winHint" hidden></div>
-  <button class="btn green big" id="winNext"></button>
-  <button class="btn gold" id="winShop" hidden></button>
-  <button class="btn" id="winRetry" hidden></button>
-  <button class="btn gold" id="winFav" hidden></button>
-  <div class="row" id="winSocial" hidden>
-    <button class="btn social half" id="winInvite"><span data-t="inviteShort"></span> <em class="badge inviteBadge2"></em></button>
-    <button class="btn social half" id="winShare"><span data-t="share"></span> <em class="badge shareBadge"></em></button>
+  <div class="col info">
+    <h2 id="winTitle"></h2>
+    <div id="winStars"><i>★</i><i>★</i><i>★</i></div>
+    <div class="stat"><span data-t="sizeLbl"></span>: <b id="winSize">0</b></div>
+    <div class="stat"><span data-t="reward"></span>: <b id="winCoins">0</b> <b>●</b></div>
+    <div class="stat bonus" id="winBonus" hidden></div>
+    <div class="newSkin" id="winSkin" hidden><canvas id="winSkinCv" width="96" height="96"></canvas><div><b data-t="newSkin"></b><br><span id="winSkinName"></span></div></div>
   </div>
-  <button class="btn ghost" id="winMenu" data-t="menu"></button>
+  <div class="col btns">
+    <button class="btn gold ad" id="winDouble" data-t="doubleCoins"></button>
+    <div class="stat hint" id="winHint" hidden></div>
+    <button class="btn green big next" id="winNext"></button>
+    <button class="btn gold" id="winShop" hidden></button>
+    <button class="btn" id="winRetry" hidden></button>
+    <button class="btn gold" id="winFav" hidden></button>
+    <div class="row" id="winSocial" hidden>
+      <button class="btn social half" id="winInvite"><span data-t="inviteShort"></span> <em class="badge inviteBadge2"></em></button>
+      <button class="btn social half" id="winShare"><span data-t="share"></span> <em class="badge shareBadge"></em></button>
+    </div>
+    <button class="btn ghost" id="winMenu" data-t="menu"></button>
+  </div>
 </div>
 
 <div class="screen" id="daily">

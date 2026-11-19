@@ -207,6 +207,35 @@ const tap = async (page, id) => { await page.click('#' + id); await page.waitFor
     await ctx.close();
   }
 
+  // ---------- 4. Альбом: кнопки «дальше» на победе и проигрыше видны целиком без прокрутки ----------
+  for (const vp of [{ width: 844, height: 390 }, { width: 740, height: 360 }]) {
+    const tag = vp.width + '×' + vp.height;
+    const { ctx, page } = await open(browser, vp);
+    const fits = id => page.evaluate(id => {
+      const e = document.getElementById(id), r = e.getBoundingClientRect();
+      return !e.hidden && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === e;
+    }, id);
+    const win = async r => {
+      await page.evaluate(r => { __game.S.dist = __game.S.cfg.len - 200; __game.ball.r = r; __game.ball.shield = 30; }, r);
+      await page.waitForFunction(() => SBGame.debug().mode === 'win', null, { timeout: 15000 });
+      await page.waitForTimeout(400);
+    };
+    await tap(page, 'playBtn');
+    await win(60);
+    check(`${tag}: первая победа (с подарком) — «Уровень 2» видна целиком`, await fits('winNext'));
+    check(`${tag}: первая победа — кнопка магазина видна целиком`, await fits('winShop'));
+    await tap(page, 'winNext');
+    await win(65);
+    check(`${tag}: вторая победа — «Уровень 3» видна целиком`, await fits('winNext'));
+    await tap(page, 'winNext');
+    await page.evaluate(() => { __game.ball.r = 5; });
+    await page.waitForFunction(() => ['over', 'revive'].includes(SBGame.debug().mode));
+    if ((await mode(page)) === 'revive') await tap(page, 'reviveSkip');
+    await page.waitForTimeout(300);
+    check(`${tag}: проигрыш — «Ещё раз» видна целиком`, await fits('againBtn'));
+    await ctx.close();
+  }
+
   console.log(results.join('\n'));
   await browser.close();
   process.exit(results.some(r => r.startsWith('FAIL')) ? 1 : 0);
