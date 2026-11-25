@@ -26,10 +26,10 @@
   html, body {
     margin: 0; height: 100%; overflow: hidden; background: #0d2340;
     font-family: 'Trebuchet MS', 'Segoe UI', Roboto, Arial, sans-serif;
-    user-select: none; -webkit-user-select: none; touch-action: none;
+    user-select: none; -webkit-user-select: none;
     overscroll-behavior: none; color: #fff;
   }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
   .screen {
     position: fixed; inset: 0; display: none; flex-direction: column;
@@ -82,11 +82,13 @@
     position: fixed; top: 0; left: 0; right: 0; display: none; justify-content: space-between;
     align-items: flex-start; padding: 12px 14px; pointer-events: none; z-index: 3;
     padding-top: max(12px, env(safe-area-inset-top));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
   }
   #hud.show { display: flex; }
   .hudLeft { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .pill.small { font-size: 16px; padding: 4px 10px; color: #e6f2ff; }
-  .hudMid { flex: 1; display: flex; justify-content: center; padding: 0 8px; }
+  .hudMid { flex: 1; min-width: 0; display: flex; justify-content: center; padding: 0 8px; }
   #hud:not(.endless) #hudScore { display: none; }
   #hud.endless .levelBox { display: none; }
   .levelBox { width: min(220px, 100%); background: rgba(13,35,64,.55); border-radius: 14px; padding: 6px 10px 8px; }
@@ -184,7 +186,33 @@
   .stat.support { font-size: 14px; color: #cfe6ff; opacity: .75; margin-top: 6px; user-select: text; -webkit-user-select: text; }
   .newSkin canvas { width: 56px; height: 56px; }
   .btn.toggle.off { opacity: .45; text-decoration: line-through; }
-  .topcoins { position: fixed; top: 14px; right: 16px; z-index: 6; color: #ffd34d; }
+  .topcoins { position: fixed; top: max(14px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right)); z-index: 6; color: #ffd34d; }
+
+  /* Низкий портретный экран, в том числе после изменения высоты рекламным баннером. */
+  @media (orientation: portrait) and (max-height: 640px) {
+    .screen > * { flex-shrink: 0; }
+    .screen { gap: 9px; }
+    h1 { font-size: clamp(30px, 9vw, 48px); }
+    .sub { margin-bottom: 0; font-size: 16px; }
+    .btn { padding: 11px 18px; font-size: 19px; }
+    .btn.big { padding: 13px 22px; font-size: 26px; }
+    #winStars { font-size: 48px; }
+    #menu { justify-content: flex-start; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+    #menu .topcoins, #menu .toggles { position: static; }
+    #menu .topcoins { align-self: flex-end; font-size: 16px; }
+    #menu .btn { min-width: 0; width: min(260px, 100%); }
+    #menu .row .btn { width: auto; }
+  }
+
+  @media (max-width: 360px) {
+    #hud { padding-left: max(8px, env(safe-area-inset-left));
+      padding-right: max(8px, env(safe-area-inset-right)); }
+    .hudMid { padding-inline: 4px; }
+    .levelBox { padding-inline: 6px; }
+    .levelTop { font-size: 13px; }
+    #pauseBtn { margin-left: 0; }
+  }
 
   #toast.low { top: auto; bottom: calc(90px + env(safe-area-inset-bottom)); }
   #toast { white-space: pre-line;
